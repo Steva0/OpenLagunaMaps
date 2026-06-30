@@ -36,6 +36,9 @@ class RoutingEngine(private val context: Context) {
     private var projectBoundary: List<LatLng>? = null
     private val fixedDepthAreas = mutableListOf<FixedDepthArea>()
 
+    // Punti "tip" alle bocche di porto (tag special:gate=sea_tip), portali tra mare e laguna.
+    private val seaTips = mutableListOf<LatLng>()
+
     private val json = Json { ignoreUnknownKeys = true }
 
     var userAverageSpeedKmH: Double = 30.0
@@ -153,6 +156,10 @@ class RoutingEngine(private val context: Context) {
 
                 if (props["special:nav:bypass"]?.jsonPrimitive?.content == "sea" && type == "LineString") {
                     seaBypassLines.add(lls)
+                }
+
+                if (props["special:gate"]?.jsonPrimitive?.content == "sea_tip" && type == "Point" && lls[0] !in seaTips) {
+                    seaTips.add(lls[0])
                 }
             }
         } catch (e: Exception) {
@@ -450,6 +457,22 @@ class RoutingEngine(private val context: Context) {
     fun isPointInNoGo(p: LatLng): Boolean = noGoAreas.any { containsPoint(it.polygon, p) }
     fun isInsideProject(p: LatLng): Boolean = projectBoundary?.let { containsPoint(it, p) } ?: true
     fun getNoGoAreas(): List<NoGoArea> = noGoAreas
+    fun getSeaTips(): List<LatLng> = seaTips
+
+    data class TipResult(val tip: LatLng, val path: List<LatLng>?, val error: String)
+
+    /**
+     * Calcola il percorso dal punto dato verso ciascuna delle bocche di porto (tips).
+     * Riusa la dispatch di [findRoute]: utile sia come strumento di debug, sia come banco
+     * di prova per il caso misto laguna<->mare (ancora TODO), che per ogni coppia
+     * (punto in laguna, tip in mare) restituirà null finché non sarà implementato.
+     */
+    fun pathsToTips(point: LatLng): List<TipResult> {
+        return seaTips.map { tip ->
+            val path = findRoute(point, tip)
+            TipResult(tip, path, lastRoutingError)
+        }
+    }
 
     fun calculateEstimatedTimeMinutes(p: List<LatLng>): Int {
         if (p.size < 2) return 0

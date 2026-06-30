@@ -40,6 +40,9 @@ class DevToolsFragment : Fragment() {
     private var endMarker: Marker? = null
     private var routeLine: Polyline? = null
     private val candidateLines = mutableListOf<Polyline>()
+    private var tipsTestMarker: Marker? = null
+
+    private val TIP_COLORS = listOf("#E6194B", "#F58231", "#FFE119", "#3CB44B", "#4363D8", "#911EB4")
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -114,9 +117,35 @@ class DevToolsFragment : Fragment() {
                 val center = map.cameraPosition.target ?: return@let
                 candidateLines.forEach { map.removePolyline(it) }
                 candidateLines.clear()
+                tipsTestMarker?.let { map.removeMarker(it) }
+                tipsTestMarker = map.addMarker(MarkerOptions().position(center).title("Test Tips"))
 
-                // TODO: Re-implementare visualizzazione dei percorsi verso i tips quando il pathfinding misto sarà pronto
-                binding.tvDevStatus.text = "Test Tips temporaneamente disabilitato (In rifacimento)"
+                val results = routingEngine.pathsToTips(center)
+                val status = StringBuilder(
+                    String.format(Locale.getDefault(), "TEST TIPS da %.6f,%.6f\n", center.latitude, center.longitude)
+                )
+                results.forEachIndexed { i, r ->
+                    val color = TIP_COLORS[i % TIP_COLORS.size]
+                    val path = r.path
+                    if (path != null) {
+                        candidateLines.add(
+                            map.addPolyline(PolylineOptions().addAll(path).color(android.graphics.Color.parseColor(color)).width(4f))
+                        )
+                        val d = routingEngine.calculateTotalDistance(path)
+                        val t = routingEngine.calculateEstimatedTimeMinutes(path)
+                        status.append(String.format(
+                            Locale.getDefault(), "Tip %d (%.4f,%.4f): %.2f km | %d min\n",
+                            i + 1, r.tip.latitude, r.tip.longitude, d / 1000.0, t
+                        ))
+                    } else {
+                        status.append(String.format(
+                            Locale.getDefault(), "Tip %d (%.4f,%.4f): %s\n",
+                            i + 1, r.tip.latitude, r.tip.longitude, r.error
+                        ))
+                    }
+                    Log.d("RoutingDebug", "tip $i ${r.tip} -> ${path?.size ?: "NULL"} punti (${r.error})")
+                }
+                binding.tvDevStatus.text = status.toString()
             }
         }
 
@@ -124,10 +153,12 @@ class DevToolsFragment : Fragment() {
             mapLibre?.let { map ->
                 startMarker?.let { map.removeMarker(it) }
                 endMarker?.let { map.removeMarker(it) }
+                tipsTestMarker?.let { map.removeMarker(it) }
                 routeLine?.let { map.removePolyline(it) }
                 candidateLines.forEach { map.removePolyline(it) }
                 startMarker = null
                 endMarker = null
+                tipsTestMarker = null
                 routeLine = null
                 candidateLines.clear()
                 binding.tvDevRouting.text = "Inizio: No | Fine: No"
@@ -150,6 +181,8 @@ class DevToolsFragment : Fragment() {
                 mapLibre?.getStyle { style -> removeDebugZones(style) }
                 candidateLines.forEach { mapLibre?.removePolyline(it) }
                 candidateLines.clear()
+                tipsTestMarker?.let { mapLibre?.removeMarker(it) }
+                tipsTestMarker = null
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
