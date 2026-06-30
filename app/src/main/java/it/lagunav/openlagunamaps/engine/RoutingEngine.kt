@@ -6,49 +6,60 @@ import org.maplibre.android.geometry.LatLng
 import java.util.*
 import kotlin.math.*
 
-data class Node(val id: String, val lat: Double, val lon: Double, val isGate: Boolean, val isSeaTip: Boolean = false)
-data class Edge(val u: String, val v: String, val length: Double, val depth: Double, val speed: Double)
+data class Node(val id: String, val lat: Double, val lon: Double)
+data class Edge(val u: String, val v: String, val lengthM: Double, val depthM: Double, val speedKmh: Double)
 data class NoGoArea(val id: String, val polygon: List<LatLng>, val isRock: Boolean)
-data class BypassRing(val nodes: List<LatLng>)
 data class Segment(val p1: LatLng, val p2: LatLng)
 data class FixedDepthArea(val depth: Float, val polygon: List<LatLng>)
 
+/**
+ * Motore di routing navale.
+ *
+ * Stato di avanzamento (vedi roadmap nel CLAUDE.md del progetto):
+ * - LAGUNA -> LAGUNA: implementato (snap al canale più vicino + A* sul grafo canali).
+ * - MARE -> MARE: TODO, non ancora reimplementato.
+ * - LAGUNA <-> MARE (misto): TODO, non ancora reimplementato.
+ */
 class RoutingEngine(private val context: Context) {
 
     private val nodes = mutableMapOf<String, Node>()
+    private val edges = mutableListOf<Edge>()
     private val adj = mutableMapOf<String, MutableList<Edge>>()
     private val noGoAreas = mutableListOf<NoGoArea>()
 
-    // Strutture per le linee guida di supporto (Bypass)
-    private val bbNodes = mutableMapOf<String, Node>()
-    private val bbAdj = mutableMapOf<String, MutableList<String>>()
-    private val nodeToBypassType = mutableMapOf<String, String>() // "sea" o "rock"
-
-    private val rockBypassRings = mutableListOf<BypassRing>()
     private val seaSegments = mutableListOf<Segment>()
     private val lagunaSegments = mutableListOf<Segment>()
-    private val seaEntryNodes = mutableListOf<Node>()
-    private val tipToGraphNodeCache = mutableMapOf<String, String>()
-
     private var projectBoundary: List<LatLng>? = null
     private val fixedDepthAreas = mutableListOf<FixedDepthArea>()
+
     private val json = Json { ignoreUnknownKeys = true }
 
     var userAverageSpeedKmH: Double = 30.0
     var lastRoutingError: String = ""
 
+    // Velocità di default per gli archi senza "maxspeed" in tag OSM.
+    private val DEFAULT_SPEED_KNOTS = 12.0
+    private val DEFAULT_SPEED_KMH = DEFAULT_SPEED_KNOTS * 1.852
+
+    // Limite superiore di velocità osservato nel grafo, usato come euristica ammissibile per A*.
+    private var maxSpeedKmh = DEFAULT_SPEED_KMH
+
     init {
         loadGraph()
         loadMarkersAndBoundaries()
-        precomputeTipGraphNodes()
     }
 
-    private fun precomputeTipGraphNodes() {
-        seaEntryNodes.forEach { tip ->
-            nodes.values.minByOrNull { haversine(it.lat, it.lon, tip.lat, tip.lon) }?.let {
-                tipToGraphNodeCache[tip.id] = it.id
-            }
-        }
+    // =================================================================
+    // CARICAMENTO DATI
+    // =================================================================
+
+    private fun parseSpeedKmh(el: JsonElement?): Double {
+        if (el == null || el is JsonNull) return DEFAULT_SPEED_KMH
+        val content = el.jsonPrimitive.contentOrNull ?: return DEFAULT_SPEED_KMH
+        // Il campo "s" nel dato sorgente è incoerente: a volte un numero puro ("11"),
+        // a volte testo con unità ("5 knots"). Estraiamo sempre la prima cifra trovata.
+        val knots = Regex("[0-9]+(\\.[0-9]+)?").find(content)?.value?.toDoubleOrNull() ?: return DEFAULT_SPEED_KMH
+        return knots * 1.852
     }
 
     private fun loadGraph() {
@@ -61,22 +72,23 @@ class RoutingEngine(private val context: Context) {
                 nodes[id] = Node(
                     id = id,
                     lat = obj["lat"]?.jsonPrimitive?.double ?: 0.0,
-                    lon = obj["lon"]?.jsonPrimitive?.double ?: 0.0,
-                    isGate = obj["gate"]?.jsonPrimitive?.content == "sea"
+                    lon = obj["lon"]?.jsonPrimitive?.double ?: 0.0
                 )
             }
 
             root["edges"]?.jsonArray?.forEach { element ->
                 val obj = element.jsonObject
-                val u = obj["u"]?.jsonPrimitive?.content ?: ""
-                val v = obj["v"]?.jsonPrimitive?.content ?: ""
+                val u = obj["u"]?.jsonPrimitive?.content ?: return@forEach
+                val v = obj["v"]?.jsonPrimitive?.content ?: return@forEach
                 val length = obj["l"]?.jsonPrimitive?.double ?: 0.0
                 val depth = obj["d"]?.jsonPrimitive?.double ?: 0.0
-                val speedTag = obj["s"]?.jsonPrimitive?.doubleOrNull ?: 12.0
+                val speedKmh = parseSpeedKmh(obj["s"])
 
-                val edge = Edge(u, v, length, depth, speedTag * 1.852)
+                val edge = Edge(u, v, length, depth, speedKmh)
+                edges.add(edge)
                 adj.getOrPut(u) { mutableListOf() }.add(edge)
                 adj.getOrPut(v) { mutableListOf() }.add(edge)
+                if (speedKmh > maxSpeedKmh) maxSpeedKmh = speedKmh
             }
 
             root["no_go_areas"]?.jsonArray?.forEach { element ->
@@ -114,12 +126,6 @@ class RoutingEngine(private val context: Context) {
                 }
                 if (lls.isEmpty()) return@forEach
 
-                val gateValue = props["special:nav:gate"]?.jsonPrimitive?.content
-                if (gateValue == "sea_tip" || (gateValue == "sea" && type == "Point")) {
-                    val osmId = props["id"]?.jsonPrimitive?.content ?: "tip_${feature.hashCode()}"
-                    seaEntryNodes.add(Node(osmId, lls[0].latitude, lls[0].longitude, false, true))
-                }
-
                 val isNoGo = props["special:nav:area"]?.jsonPrimitive?.content == "no_go"
                 val isRock = props["special:nav:obstacle"]?.jsonPrimitive?.content == "rock" ||
                         props["special:nav:obstade"]?.jsonPrimitive?.content == "rock"
@@ -138,34 +144,8 @@ class RoutingEngine(private val context: Context) {
 
                 val isSeaMarker = props.containsKey("special:mare")
                 val isLagunaMarker = props.containsKey("special:laguna")
-                val isBypassSea = props["special:nav:bypass"]?.jsonPrimitive?.content == "sea"
-                val isBypassRock = props["special:nav:bypass"]?.jsonPrimitive?.content == "rock"
-
-                if (isBypassRock) rockBypassRings.add(BypassRing(lls))
-
-                if (isSeaMarker) for(i in 0 until lls.size-1) seaSegments.add(Segment(lls[i], lls[i+1]))
-                if (isLagunaMarker) for(i in 0 until lls.size-1) lagunaSegments.add(Segment(lls[i], lls[i+1]))
-
-                if (isBypassSea || isBypassRock) {
-                    val typeStr = if (isBypassRock) "rock" else "sea"
-                    val isClosed = lls.size > 2 && lls.first() == lls.last()
-                    val wayNodeIds = mutableListOf<String>()
-                    lls.forEachIndexed { i, ll ->
-                        if (i == lls.size - 1 && isClosed) return@forEachIndexed
-                        val id = "bb_${feature.hashCode()}_$i"
-                        bbNodes[id] = Node(id, ll.latitude, ll.longitude, false)
-                        nodeToBypassType[id] = typeStr
-                        wayNodeIds.add(id)
-                    }
-                    for (i in 0 until wayNodeIds.size - 1) {
-                        bbAdj.getOrPut(wayNodeIds[i]) { mutableListOf() }.add(wayNodeIds[i+1])
-                        bbAdj.getOrPut(wayNodeIds[i+1]) { mutableListOf() }.add(wayNodeIds[i])
-                    }
-                    if (isClosed && wayNodeIds.isNotEmpty()) {
-                        bbAdj.getOrPut(wayNodeIds.last()) { mutableListOf() }.add(wayNodeIds.first())
-                        bbAdj.getOrPut(wayNodeIds.first()) { mutableListOf() }.add(wayNodeIds.last())
-                    }
-                }
+                if (isSeaMarker) for (i in 0 until lls.size - 1) seaSegments.add(Segment(lls[i], lls[i + 1]))
+                if (isLagunaMarker) for (i in 0 until lls.size - 1) lagunaSegments.add(Segment(lls[i], lls[i + 1]))
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -182,103 +162,124 @@ class RoutingEngine(private val context: Context) {
         val eSea = isAtSea(end)
 
         return when {
-            // CASO 1: INTERNO LAGUNA
-            !sSea && !eSea -> {
-                val sId = findNearestGraphNode(start) ?: run { lastRoutingError = "Nodo di partenza non trovato nel grafo"; return null }
-                val eId = findNearestGraphNode(end) ?: run { lastRoutingError = "Nodo di arrivo non trovato nel grafo"; return null }
-                val pathIds = runCanalAStar(sId, eId, minDepth) ?: run { lastRoutingError = "Nessun canale praticabile (profondità minima: ${minDepth}m)"; return null }
-
-                val path = mutableListOf<LatLng>()
-                path.add(start)
-                pathIds.forEach { id -> nodes[id]?.let { path.add(LatLng(it.lat, it.lon)) } }
-                path.add(end)
-                path
-            }
-
-            // CASO 2: MARE -> MARE
-            sSea && eSea -> {
-                solveSeaPath(start, end)
-            }
-
-            // CASO 3: MISTO (LAGUNA <-> MARE)
-            else -> {
-                val seaPoint = if (sSea) start else end
-                val lagPoint = if (sSea) end else start
-                val lagNodeId = findNearestGraphNode(lagPoint) ?: return null
-
-                val bestTip = seaEntryNodes.minByOrNull { tip ->
-                    haversine(seaPoint.latitude, seaPoint.longitude, tip.lat, tip.lon) +
-                            haversine(tip.lat, tip.lon, lagPoint.latitude, lagPoint.longitude)
-                } ?: return null
-
-                val tipGraphId = tipToGraphNodeCache[bestTip.id] ?: return null
-
-                val canalPathIds = if (sSea) runCanalAStar(tipGraphId, lagNodeId, minDepth)
-                else runCanalAStar(lagNodeId, tipGraphId, minDepth)
-
-                if (canalPathIds == null) return null
-
-                val tipLl = LatLng(bestTip.lat, bestTip.lon)
-                val seaPart = solveSeaPath(if (sSea) seaPoint else tipLl, if (sSea) tipLl else seaPoint)
-
-                val combined = mutableListOf<LatLng>()
-                if (sSea) {
-                    combined.addAll(seaPart)
-                    canalPathIds.drop(1).forEach { id -> nodes[id]?.let { combined.add(LatLng(it.lat, it.lon)) } }
-                    combined.add(end)
-                } else {
-                    combined.add(start)
-                    canalPathIds.forEach { id -> nodes[id]?.let { combined.add(LatLng(it.lat, it.lon)) } }
-                    combined.addAll(seaPart.drop(1))
-                }
-                patchRocks(combined)
-            }
+            !sSea && !eSea -> solveLagunaToLaguna(start, end, minDepth)
+            sSea && eSea -> solveSeaToSea(start, end)
+            else -> solveMixed(start, end, minDepth)
         }
     }
 
     // =================================================================
-    // ALGORITMI MARE-MARE STRUTTURATI (COSTA LINEARE VS ANTELLO SCOGLI)
+    // CASO 1: LAGUNA -> LAGUNA (implementato)
+    //
+    // Strategia: si proietta il punto di partenza sul canale (arco del grafo)
+    // più vicino, idem per l'arrivo, poi si naviga col solo grafo dei canali
+    // (A*, costo = tempo) dal punto di innesto di partenza a quello di arrivo.
     // =================================================================
 
-    // Velocità massima ammissibile per l'euristica A* (12 nodi in km/h).
-    // Deve essere >= della velocità più alta in qualsiasi canale del grafo.
-    private val MAX_CANAL_SPEED_KMH = 12.0 * 1.852
+    private data class EdgeSnap(val edge: Edge, val point: LatLng)
+
+    private fun solveLagunaToLaguna(start: LatLng, end: LatLng, minDepth: Double): List<LatLng>? {
+        val snapStart = snapToNearestEdge(start) ?: run { lastRoutingError = "Nessun canale trovato vicino al punto di partenza"; return null }
+        val snapEnd = snapToNearestEdge(end) ?: run { lastRoutingError = "Nessun canale trovato vicino al punto di arrivo"; return null }
+
+        // Caso degenere: partenza e arrivo si agganciano allo stesso canale, nessun A* necessario.
+        if (snapStart.edge === snapEnd.edge) {
+            if (snapStart.edge.depthM in 0.1..<minDepth) {
+                lastRoutingError = "Canale non navigabile (profondità minima richiesta: ${minDepth}m)"
+                return null
+            }
+            return listOf(start, snapStart.point, snapEnd.point, end)
+        }
+
+        val startId = "__snap_start__"
+        val endId = "__snap_end__"
+        val virtualPositions = mapOf(startId to snapStart.point, endId to snapEnd.point)
+        val extra = mutableMapOf<String, MutableList<Edge>>()
+
+        fun addVirtualEdge(from: String, edgeSnap: EdgeSnap) {
+            val uNode = nodes[edgeSnap.edge.u] ?: return
+            val vNode = nodes[edgeSnap.edge.v] ?: return
+            val lenToU = haversine(edgeSnap.point.latitude, edgeSnap.point.longitude, uNode.lat, uNode.lon)
+            val lenToV = haversine(edgeSnap.point.latitude, edgeSnap.point.longitude, vNode.lat, vNode.lon)
+            val eToU = Edge(from, edgeSnap.edge.u, lenToU, edgeSnap.edge.depthM, edgeSnap.edge.speedKmh)
+            val eToV = Edge(from, edgeSnap.edge.v, lenToV, edgeSnap.edge.depthM, edgeSnap.edge.speedKmh)
+            extra.getOrPut(from) { mutableListOf() }.addAll(listOf(eToU, eToV))
+            extra.getOrPut(edgeSnap.edge.u) { mutableListOf() }.add(eToU)
+            extra.getOrPut(edgeSnap.edge.v) { mutableListOf() }.add(eToV)
+        }
+        addVirtualEdge(startId, snapStart)
+        addVirtualEdge(endId, snapEnd)
+
+        fun neighbors(id: String): List<Edge> = (adj[id].orEmpty()) + (extra[id].orEmpty())
+        fun position(id: String): LatLng? = virtualPositions[id] ?: nodes[id]?.let { LatLng(it.lat, it.lon) }
+
+        val pathIds = runCanalAStar(startId, endId, minDepth, ::neighbors, ::position)
+            ?: run { lastRoutingError = "Nessun canale praticabile (profondità minima: ${minDepth}m)"; return null }
+
+        val path = mutableListOf<LatLng>()
+        path.add(start)
+        pathIds.forEach { id -> position(id)?.let { path.add(it) } }
+        path.add(end)
+        return path
+    }
+
+    /** Trova, a forza bruta, l'arco del grafo più vicino al punto e il punto di proiezione su di esso. */
+    private fun snapToNearestEdge(p: LatLng): EdgeSnap? {
+        var best: EdgeSnap? = null
+        var bestDist = Double.MAX_VALUE
+        edges.forEach { e ->
+            val uNode = nodes[e.u] ?: return@forEach
+            val vNode = nodes[e.v] ?: return@forEach
+            val proj = closestPointOnSegment(p, LatLng(uNode.lat, uNode.lon), LatLng(vNode.lat, vNode.lon))
+            val dist = haversine(p.latitude, p.longitude, proj.latitude, proj.longitude)
+            if (dist < bestDist) {
+                bestDist = dist
+                best = EdgeSnap(e, proj)
+            }
+        }
+        return best
+    }
 
     private fun edgeTimeSeconds(e: Edge): Double {
-        val speedKmh = if (e.speed > 0.0) e.speed else MAX_CANAL_SPEED_KMH
-        return (e.length / 1000.0) / speedKmh * 3600.0
+        val speed = if (e.speedKmh > 0.0) e.speedKmh else DEFAULT_SPEED_KMH
+        return (e.lengthM / 1000.0) / speed * 3600.0
     }
 
-    private fun heuristicTimeSeconds(fromId: String, toId: String): Double {
-        val n = nodes[fromId] ?: return 0.0
-        val g = nodes[toId] ?: return 0.0
-        return haversine(n.lat, n.lon, g.lat, g.lon) / 1000.0 / MAX_CANAL_SPEED_KMH * 3600.0
-    }
-
-    private fun runCanalAStar(startId: String, endId: String, minD: Double): List<String>? {
+    private fun runCanalAStar(
+        startId: String,
+        endId: String,
+        minDepth: Double,
+        neighbors: (String) -> List<Edge>,
+        position: (String) -> LatLng?
+    ): List<String>? {
         if (startId == endId) return listOf(startId)
 
-        val times = mutableMapOf<String, Double>().withDefault { Double.MAX_VALUE }
+        fun heuristicSeconds(fromId: String, toId: String): Double {
+            val a = position(fromId) ?: return 0.0
+            val b = position(toId) ?: return 0.0
+            return haversine(a.latitude, a.longitude, b.latitude, b.longitude) / 1000.0 / maxSpeedKmh * 3600.0
+        }
+
+        val times = mutableMapOf<String, Double>()
         val prev = mutableMapOf<String, String?>()
-        // Triple: (nodeId, gCost_secondi, hCost_secondi)
         val pq = PriorityQueue<Triple<String, Double, Double>>(compareBy { it.second + it.third })
 
         times[startId] = 0.0
-        pq.add(Triple(startId, 0.0, heuristicTimeSeconds(startId, endId)))
+        pq.add(Triple(startId, 0.0, heuristicSeconds(startId, endId)))
 
         while (pq.isNotEmpty()) {
             val (u, g, _) = pq.poll()!!
             if (u == endId) break
             if (g > (times[u] ?: Double.MAX_VALUE)) continue
 
-            adj[u]?.forEach { e ->
-                if (e.depth in 0.1..<minD) return@forEach
+            neighbors(u).forEach { e ->
+                if (e.depthM in 0.1..<minDepth) return@forEach
                 val v = if (e.u == u) e.v else e.u
                 val newTime = g + edgeTimeSeconds(e)
                 if (newTime < (times[v] ?: Double.MAX_VALUE)) {
                     times[v] = newTime
                     prev[v] = u
-                    pq.add(Triple(v, newTime, heuristicTimeSeconds(v, endId)))
+                    pq.add(Triple(v, newTime, heuristicSeconds(v, endId)))
                 }
             }
         }
@@ -292,333 +293,27 @@ class RoutingEngine(private val context: Context) {
         return if (path.size >= 2 && path.first() == startId) path else null
     }
 
-    /**
-     * Navigazione Mare-Mare con instradamento differenziato per coste aperte e scogli chiusi.
-     */
-    private fun solveSeaPath(start: LatLng, end: LatLng): List<LatLng> {
-        val path = mutableListOf<LatLng>()
+    // =================================================================
+    // CASO 2: MARE -> MARE (TODO, da reimplementare)
+    // =================================================================
 
-        val cleanStart = handleEscapeIfInsideNoGo(start)
-        val cleanEnd = handleEscapeIfInsideNoGo(end)
-
-        if (cleanStart != start) path.add(start)
-        path.add(cleanStart)
-
-        var currentPt = cleanStart
-        val globalVisitedKeys = mutableSetOf<String>()
-        var safetyCounter = 0
-
-        while (safetyCounter < 40) {
-            safetyCounter++
-
-            // Caso ottimo: Meta visibile direttamente senza intersezioni
-            if (!isPathBlocked(currentPt, cleanEnd)) {
-                path.add(cleanEnd)
-                if (cleanEnd != end) path.add(end)
-                return pullStringBidirectional(path)
-            }
-
-            // Identificazione dell'area no-go d'ostacolo corrente
-            val obstacle = noGoAreas.find { lineIntersectsPolygon(currentPt, cleanEnd, it.polygon) }
-            if (obstacle == null) {
-                path.add(cleanEnd)
-                return pullStringBidirectional(path)
-            }
-
-            val nearestBBId = findNearestBBNode(currentPt)
-            var successfullyBypassed = false
-
-            if (nearestBBId != null) {
-                val startBBNode = bbNodes[nearestBBId]!!
-                val distToBB = haversine(currentPt.latitude, currentPt.longitude, startBBNode.lat, startBBNode.lon)
-
-                // Accetta il supporto vettoriale solo se si trova entro un raggio di 400 metri
-                if (distToBB < 400.0) {
-                    val bypassType = nodeToBypassType[nearestBBId] ?: "sea"
-
-                    if (bypassType == "rock") {
-                        // CASO SCOGLIO / ANNELLO CHIUSO: Calcolo bidirezionale (orario/antiorario) del percorso minimo
-                        val ringPath = findBestDirectionOnRockRing(nearestBBId, currentPt, cleanEnd)
-                        if (ringPath != null && ringPath.isNotEmpty()) {
-                            ringPath.forEach { pt ->
-                                val k = "${pt.latitude},${pt.longitude}"
-                                if (k !in globalVisitedKeys) {
-                                    path.add(pt)
-                                    globalVisitedKeys.add(k)
-                                }
-                            }
-                            currentPt = path.last()
-                            successfullyBypassed = true
-                        }
-                    } else {
-                        // CASO COSTA / LINEA APERTA ("sea"): Scorrimento lineare guidato verso l'obiettivo
-                        var currBBId: String? = nearestBBId
-                        val lineVisited = mutableSetOf<String>()
-
-                        while (currBBId != null && lineVisited.size < 20) {
-                            lineVisited.add(currBBId)
-                            val nObj = bbNodes[currBBId]!!
-                            val ptLL = LatLng(nObj.lat, nObj.lon)
-
-                            val k = "${ptLL.latitude},${ptLL.longitude}"
-                            if (k !in globalVisitedKeys) {
-                                path.add(ptLL)
-                                globalVisitedKeys.add(k)
-                            }
-                            currentPt = ptLL
-
-                            // Uscita anticipata se la vista verso il traguardo si libera
-                            if (!isPathBlocked(currentPt, cleanEnd)) {
-                                successfullyBypassed = true
-                                break
-                            }
-
-                            // Sceglie il prossimo nodo della linea che riduce la distanza assoluta verso il traguardo
-                            currBBId = bbAdj[currBBId]?.filter { it !in lineVisited }?.minByOrNull { id ->
-                                haversine(bbNodes[id]!!.lat, bbNodes[id]!!.lon, cleanEnd.latitude, cleanEnd.longitude)
-                            }
-                        }
-                        if (lineVisited.isNotEmpty()) successfullyBypassed = true
-                    }
-                }
-            }
-
-            // FALLBACK GEOMETRICO: Se mancano i vettori o siamo in un cul-de-sac, calcola la tangente di aggiramento
-            if (!successfullyBypassed) {
-                val candidates = getPolygonBypassCandidates(currentPt, cleanEnd, obstacle.polygon)
-                val bestCandidate = listOf(candidates.first, candidates.second).minByOrNull { c ->
-                    haversine(currentPt.latitude, currentPt.longitude, c.latitude, c.longitude) +
-                            haversine(c.latitude, c.longitude, cleanEnd.latitude, cleanEnd.longitude)
-                }!!
-
-                val cKey = "${bestCandidate.latitude},${bestCandidate.longitude}"
-                if (cKey in globalVisitedKeys) {
-                    // Previene oscillazioni inserendo una leggera estrusione radiale di fuga
-                    val escapePt = LatLng(bestCandidate.latitude + 0.0005, bestCandidate.longitude + 0.0005)
-                    path.add(escapePt)
-                    currentPt = escapePt
-                } else {
-                    path.add(bestCandidate)
-                    globalVisitedKeys.add(cKey)
-                    currentPt = bestCandidate
-                }
-            }
-        }
-
-        if (path.last() != end) path.add(end)
-        return pullStringBidirectional(path)
+    private fun solveSeaToSea(start: LatLng, end: LatLng): List<LatLng>? {
+        lastRoutingError = "Routing mare-mare non ancora implementato (TODO)"
+        return null
     }
 
-    /**
-     * Calcola i due rami di scorrimento su un anello chiuso di scogli e restituisce la rotta più breve.
-     */
-    private fun findBestDirectionOnRockRing(startBBId: String, currentPt: LatLng, endPt: LatLng): List<LatLng>? {
-        // Troviamo tutti i nodi appartenenti a questa specifica barriera/anello tramite BFS locale
-        val componentNodes = mutableListOf<String>()
-        val queue: Queue<String> = LinkedList()
-        val visited = mutableSetOf<String>()
+    // =================================================================
+    // CASO 3: LAGUNA <-> MARE, MISTO (TODO, da reimplementare)
+    // =================================================================
 
-        queue.add(startBBId)
-        visited.add(startBBId)
-
-        while (queue.isNotEmpty()) {
-            val curr = queue.poll()!!
-            componentNodes.add(curr)
-            bbAdj[curr]?.forEach { adjId ->
-                if (adjId !in visited) {
-                    visited.add(adjId)
-                    queue.add(adjId)
-                }
-            }
-        }
-
-        // Troviamo i nodi dell'anello che hanno una linea di vista pulita verso la meta finale
-        val exitNodes = componentNodes.filter { id ->
-            val node = bbNodes[id]!!
-            !isPathBlocked(LatLng(node.lat, node.lon), endPt)
-        }
-
-        if (exitNodes.isEmpty()) return null
-
-        // Troviamo il nodo d'uscita dell'anello più vicino in linea d'aria alla meta finale
-        val bestExitNodeId = exitNodes.minByOrNull { id ->
-            haversine(bbNodes[id]!!.lat, bbNodes[id]!!.lon, endPt.latitude, endPt.longitude)
-        } ?: return null
-
-        // Calcoliamo i due cammini sull'anello (Braccio Destro vs Braccio Sinistro) usando una BFS standard
-        fun shortPathOnRing(fromId: String, toId: String): List<LatLng> {
-            val pDists = mutableMapOf<String, Double>().withDefault { Double.MAX_VALUE }
-            val pPrev = mutableMapOf<String, String?>()
-            val pPq = PriorityQueue<Pair<String, Double>>(compareBy { it.second })
-
-            pDists[fromId] = 0.0
-            pPq.add(Pair(fromId, 0.0))
-
-            while (pPq.isNotEmpty()) {
-                val (u, d) = pPq.poll()!!
-                if (u == toId) break
-                if (d > (pDists[u] ?: Double.MAX_VALUE)) continue
-
-                bbAdj[u]?.forEach { v ->
-                    if (v in componentNodes) { // Rimaniamo tassativamente dentro questo anello
-                        val dist = haversine(bbNodes[u]!!.lat, bbNodes[u]!!.lon, bbNodes[v]!!.lat, bbNodes[v]!!.lon)
-                        val newD = d + dist
-                        if (newD < (pDists[v] ?: Double.MAX_VALUE)) {
-                            pDists[v] = newD
-                            pPrev[v] = u
-                            pPq.add(Pair(v, newD))
-                        }
-                    }
-                }
-            }
-
-            val pathList = mutableListOf<LatLng>()
-            var curr: String? = toId
-            while (curr != null) {
-                bbNodes[curr]?.let { pathList.add(0, LatLng(it.lat, it.lon)) }
-                curr = pPrev[curr]
-            }
-            return pathList
-        }
-
-        return shortPathOnRing(startBBId, bestExitNodeId)
+    private fun solveMixed(start: LatLng, end: LatLng, minDepth: Double): List<LatLng>? {
+        lastRoutingError = "Routing misto laguna/mare non ancora implementato (TODO)"
+        return null
     }
 
-    private fun handleEscapeIfInsideNoGo(p: LatLng): LatLng {
-        val area = noGoAreas.find { containsPoint(it.polygon, p) } ?: return p
-        var minDistance = Double.MAX_VALUE
-        var closestPoint = p
-        val poly = area.polygon
-
-        for (i in 0 until poly.size - 1) {
-            val pt = closestPointOnSegment(p, poly[i], poly[i+1])
-            val dist = haversine(p.latitude, p.longitude, pt.latitude, pt.longitude)
-            if (dist < minDistance) {
-                minDistance = dist
-                closestPoint = pt
-            }
-        }
-
-        val latDiff = closestPoint.latitude - p.latitude
-        val lonDiff = closestPoint.longitude - p.longitude
-        val len = sqrt(latDiff.pow(2) + lonDiff.pow(2))
-
-        if (len == 0.0) return LatLng(closestPoint.latitude + 0.0003, closestPoint.longitude + 0.0003)
-
-        val offset = 0.00025 // Margine steso per tirarsi fuori da scogliere e dighe
-        return LatLng(
-            closestPoint.latitude + (latDiff / len) * offset,
-            closestPoint.longitude + (lonDiff / len) * offset
-        )
-    }
-
-    private fun getPolygonBypassCandidates(start: LatLng, end: LatLng, polygon: List<LatLng>): Pair<LatLng, LatLng> {
-        var maxLeftVertex = polygon.first()
-        var maxRightVertex = polygon.first()
-        var maxLeftDist = -1.0
-        var maxRightDist = -1.0
-
-        val lat1 = start.latitude; val lon1 = start.longitude
-        val lat2 = end.latitude; val lon2 = end.longitude
-
-        polygon.distinct().forEach { vertex ->
-            val crossProduct = (lat2 - lat1) * (vertex.longitude - lon1) - (lon2 - lon1) * (vertex.latitude - lat1)
-            val distance = abs((lat2 - lat1) * (lon1 - vertex.longitude) - (lat1 - lat2) * (lat1 - vertex.latitude)) /
-                    sqrt((lat2 - lat1).pow(2) + (lon2 - lon1).pow(2))
-
-            if (crossProduct > 0) {
-                if (distance > maxLeftDist) { maxLeftDist = distance; maxLeftVertex = vertex }
-            } else {
-                if (distance > maxRightDist) { maxRightDist = distance; maxRightVertex = vertex }
-            }
-        }
-
-        val buffer = 0.0004 // Distanza di sicurezza dagli spigoli vivi delle barriere (~45 metri stabili)
-
-        val leftBypass = LatLng(
-            maxLeftVertex.latitude + if (maxLeftVertex.latitude >= start.latitude) buffer else -buffer,
-            maxLeftVertex.longitude + if (maxLeftVertex.longitude >= start.longitude) buffer else -buffer
-        )
-        val rightBypass = LatLng(
-            maxRightVertex.latitude + if (maxRightVertex.latitude >= start.latitude) buffer else -buffer,
-            maxRightVertex.longitude + if (maxRightVertex.longitude >= start.longitude) buffer else -buffer
-        )
-
-        return Pair(leftBypass, rightBypass)
-    }
-
-    private fun pullStringBidirectional(path: List<LatLng>): List<LatLng> {
-        if (path.size < 3) return path
-
-        val fwd = mutableListOf<LatLng>()
-        fwd.add(path.first())
-        var i = 0
-        while (i < path.size - 1) {
-            var furthestVisible = i + 1
-            for (j in path.size - 1 downTo i + 2) {
-                if (!isPathBlocked(path[i], path[j])) {
-                    furthestVisible = j
-                    break
-                }
-            }
-            fwd.add(path[furthestVisible])
-            i = furthestVisible
-        }
-
-        val bwd = mutableListOf<LatLng>()
-        bwd.add(fwd.last())
-        var k = fwd.size - 1
-        while (k > 0) {
-            var furthestVisible = k - 1
-            for (j in 0 until k - 1) {
-                if (!isPathBlocked(fwd[k], fwd[j])) {
-                    furthestVisible = j
-                    break
-                }
-            }
-            bwd.add(0, fwd[furthestVisible])
-            k = furthestVisible
-        }
-
-        return bwd.distinct()
-    }
-
-    private fun closestPointOnSegment(p: LatLng, a: LatLng, b: LatLng): LatLng {
-        val l2 = (b.latitude - a.latitude).pow(2) + (b.longitude - a.longitude).pow(2)
-        if (l2 == 0.0) return a
-        var t = ((p.latitude - a.latitude) * (b.latitude - a.latitude) + (p.longitude - a.longitude) * (b.longitude - a.longitude)) / l2
-        t = max(0.0, min(1.0, t))
-        return LatLng(a.latitude + t * (b.latitude - a.latitude), a.longitude + t * (b.longitude - a.longitude))
-    }
-
-    private fun distanceToPolygon(p: LatLng, poly: List<LatLng>): Double {
-        var minDist = Double.MAX_VALUE
-        for (i in 0 until poly.size - 1) {
-            val cp = closestPointOnSegment(p, poly[i], poly[i+1])
-            val d = haversine(p.latitude, p.longitude, cp.latitude, cp.longitude)
-            if (d < minDist) minDist = d
-        }
-        return minDist
-    }
-
-    fun getSeaToTipsPaths(seaPoint: LatLng): List<List<LatLng>> = seaEntryNodes.map { solveSeaPath(seaPoint, LatLng(it.lat, it.lon)) }
-
-    fun getLagunaToTipsPaths(lagPoint: LatLng): List<List<LatLng>> {
-        val paths = mutableListOf<List<LatLng>>()
-        val startId = findNearestGraphNode(lagPoint) ?: return paths
-        for (tip in seaEntryNodes) {
-            val tipGraphId = tipToGraphNodeCache[tip.id] ?: continue
-            val ids = runCanalAStar(startId, tipGraphId, 0.0)
-            if (ids != null) {
-                val p = mutableListOf<LatLng>()
-                p.add(lagPoint)
-                ids.forEach { id -> nodes[id]?.let { n -> p.add(LatLng(n.lat, n.lon)) } }
-                p.add(LatLng(tip.lat, tip.lon))
-                paths.add(p)
-            }
-        }
-        return paths
-    }
+    // =================================================================
+    // QUERY DI SUPPORTO (usate da UI / HUD, indipendenti dal routing)
+    // =================================================================
 
     fun getFixedDepthAt(p: LatLng): Float? = fixedDepthAreas.find { containsPoint(it.polygon, p) }?.depth
     fun isPointInNoGo(p: LatLng): Boolean = noGoAreas.any { containsPoint(it.polygon, p) }
@@ -630,27 +325,21 @@ class RoutingEngine(private val context: Context) {
         return (calculateTotalTimeSeconds(p) / 60.0).toInt()
     }
 
+    // Approssimazione: la distanza totale del percorso disegnato viene divisa per la
+    // velocità di default. Le velocità reali per-arco sono già usate internamente da
+    // A* per scegliere il percorso più veloce, ma si perdono una volta che il risultato
+    // è appiattito in una semplice lista di punti.
     fun calculateTotalTimeSeconds(path: List<LatLng>): Double {
-        var totalSec = 0.0
-        for (i in 0 until path.size - 1) {
-            val dist = haversine(path[i].latitude, path[i].longitude, path[i+1].latitude, path[i+1].longitude)
-            val isAtSeaSegment = isAtSea(path[i]) && isAtSea(path[i+1])
-            val speed = if (isAtSeaSegment) userAverageSpeedKmH else 12.0 * 1.852
-            totalSec += (dist / 1000.0) / speed * 3600.0
-        }
-        return totalSec
+        val totalDist = calculateTotalDistance(path)
+        return (totalDist / 1000.0) / DEFAULT_SPEED_KMH * 3600.0
     }
 
     fun calculateTotalDistance(path: List<LatLng>): Double {
         var totalDist = 0.0
         for (i in 0 until path.size - 1) {
-            totalDist += haversine(path[i].latitude, path[i].longitude, path[i+1].latitude, path[i+1].longitude)
+            totalDist += haversine(path[i].latitude, path[i].longitude, path[i + 1].latitude, path[i + 1].longitude)
         }
         return totalDist
-    }
-
-    fun patchRocks(path: List<LatLng>): List<LatLng> {
-        return pullStringBidirectional(path)
     }
 
     fun isAtSea(p: LatLng): Boolean {
@@ -669,37 +358,12 @@ class RoutingEngine(private val context: Context) {
         return null
     }
 
-    private fun findNearestBBNode(p: LatLng) = bbNodes.values.minByOrNull { haversine(p.latitude, p.longitude, it.lat, it.lon) }?.id
-    private fun findNearestGraphNode(p: LatLng) = nodes.values.minByOrNull { haversine(p.latitude, p.longitude, it.lat, it.lon) }?.id
-
-    private fun isPathBlocked(a: LatLng, b: LatLng): Boolean = noGoAreas.any { area ->
-        lineIntersectsPolygon(a, b, area.polygon)
-    }
-
-    private fun lineIntersectsPolygon(a: LatLng, b: LatLng, poly: List<LatLng>): Boolean {
-        for (i in 0 until poly.size - 1) if (intersect(a, b, poly[i], poly[i+1])) return true
-        for (step in 1..9) {
-            val f = step / 10.0
-            val p = LatLng(a.latitude + (b.latitude - a.latitude) * f, a.longitude + (b.longitude - a.longitude) * f)
-            if (containsPoint(poly, p)) return true
-        }
-        return false
-    }
-
-    private fun intersect(p1: LatLng, q1: LatLng, p2: LatLng, q2: LatLng): Boolean {
-        fun orientation(p: LatLng, q: LatLng, r: LatLng): Int {
-            val v = (q.latitude - p.latitude) * (r.longitude - q.longitude) - (q.longitude - p.longitude) * (r.latitude - q.latitude)
-            if (abs(v) < 1e-15) return 0
-            return if (v > 0) 1 else 2
-        }
-        fun onSegment(p: LatLng, a: LatLng, b: LatLng): Boolean = p.longitude <= max(a.longitude, b.longitude) && p.longitude >= min(a.longitude, b.longitude) && p.latitude <= max(a.latitude, b.latitude) && p.latitude >= min(a.latitude, b.latitude)
-        val o1 = orientation(p1, q1, p2); val o2 = orientation(p1, q1, q2); val o3 = orientation(p2, q2, p1); val o4 = orientation(p2, q2, q1)
-        if (o1 != o2 && o3 != o4) return true
-        if (o1 == 0 && onSegment(p2, p1, q1)) return true
-        if (o2 == 0 && onSegment(q2, p1, q1)) return true
-        if (o3 == 0 && onSegment(p1, p2, q2)) return true
-        if (o4 == 0 && onSegment(q1, p2, q2)) return true
-        return false
+    private fun closestPointOnSegment(p: LatLng, a: LatLng, b: LatLng): LatLng {
+        val l2 = (b.latitude - a.latitude).pow(2) + (b.longitude - a.longitude).pow(2)
+        if (l2 == 0.0) return a
+        var t = ((p.latitude - a.latitude) * (b.latitude - a.latitude) + (p.longitude - a.longitude) * (b.longitude - a.longitude)) / l2
+        t = max(0.0, min(1.0, t))
+        return LatLng(a.latitude + t * (b.latitude - a.latitude), a.longitude + t * (b.longitude - a.longitude))
     }
 
     private fun containsPoint(poly: List<LatLng>, p: LatLng): Boolean {
