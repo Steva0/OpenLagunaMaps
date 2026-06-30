@@ -111,6 +111,44 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
+    <!-- Pannello Simulatore Barca (visibile solo in modalità "Simulatore") -->
+    <LinearLayout
+        android:id="@+id/group_simulator"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="12dp"
+            android:layout_marginBottom="4dp"
+            app:cardBackgroundColor="#DD222222"
+            app:cardCornerRadius="8dp">
+
+            <TextView
+                android:id="@+id/tv_sim_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:padding="8dp"
+                android:text="Barca: --\nVelocità: -- kn  Heading: --°\nLimite canale: --"
+                android:textColor="@color/white"
+                android:textSize="11sp" />
+        </androidx.cardview.widget.CardView>
+
+        <!-- Joystick centrato orizzontalmente -->
+        <it.lagunav.openlagunamaps.ui.JoystickView
+            android:id="@+id/joystick"
+            android:layout_width="180dp"
+            android:layout_height="180dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="8dp" />
+
+    </LinearLayout>
+
     <!-- Gruppi di Pulsanti -->
     <LinearLayout
         android:layout_width="wrap_content"

@@ -1,5 +1,6 @@
 package it.lagunav.openlagunamaps.ui
 
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -8,9 +9,12 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import androidx.fragment.app.Fragment
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import it.lagunav.openlagunamaps.databinding.FragmentDevtoolsBinding
 import it.lagunav.openlagunamaps.engine.BathymetryEngine
 import it.lagunav.openlagunamaps.engine.RoutingEngine
+import it.lagunav.openlagunamaps.engine.SimulatedPositionProvider
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
@@ -26,6 +30,8 @@ import org.maplibre.android.annotations.PolylineOptions
 import org.maplibre.android.annotations.Polyline
 import java.nio.charset.Charset
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.roundToInt
 
 class DevToolsFragment : Fragment() {
 
@@ -43,6 +49,11 @@ class DevToolsFragment : Fragment() {
     private var tipsTestMarker: Marker? = null
 
     private val TIP_COLORS = listOf("#E6194B", "#F58231", "#FFE119", "#3CB44B", "#4363D8", "#911EB4")
+
+    // Simulatore
+    private var simProvider: SimulatedPositionProvider? = null
+    private val SOURCE_SIM_BOAT = "sim-boat-source"
+    private val LAYER_SIM_BOAT  = "sim-boat-layer"
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -168,21 +179,24 @@ class DevToolsFragment : Fragment() {
     }
 
     private fun setupSpinner() {
-        val modes = arrayOf("Calcolo Percorso", "Test Punte (Tips)", "Zone Mare/Laguna")
+        val modes = arrayOf("Calcolo Percorso", "Test Punte (Tips)", "Zone Mare/Laguna", "Simulatore Barca")
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
         binding.spinnerDevMode.adapter = adapter
 
         binding.spinnerDevMode.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                binding.groupRoute.visibility = if (position == 0) View.VISIBLE else View.GONE
-                binding.btnTestTips.visibility = if (position == 1) View.VISIBLE else View.GONE
-                binding.cbShowZones.visibility = if (position == 2) View.VISIBLE else View.GONE
+                binding.groupRoute.visibility      = if (position == 0) View.VISIBLE else View.GONE
+                binding.btnTestTips.visibility     = if (position == 1) View.VISIBLE else View.GONE
+                binding.cbShowZones.visibility     = if (position == 2) View.VISIBLE else View.GONE
+                binding.groupSimulator.visibility  = if (position == 3) View.VISIBLE else View.GONE
 
                 mapLibre?.getStyle { style -> removeDebugZones(style) }
                 candidateLines.forEach { mapLibre?.removePolyline(it) }
                 candidateLines.clear()
                 tipsTestMarker?.let { mapLibre?.removeMarker(it) }
                 tipsTestMarker = null
+
+                if (position == 3) startSimulator() else stopSimulator()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -292,6 +306,7 @@ class DevToolsFragment : Fragment() {
             style.addLayer(LineLayer("gates-layer-dev", "laguna-source-dev").withFilter(eq(get("special:nav:gate"), "sea")).withProperties(lineColor("#00FF00"), lineWidth(4f)))
             style.addLayer(LineLayer("bypass-sea-layer-dev", "laguna-source-dev").withFilter(eq(get("special:nav:bypass"), "sea")).withProperties(lineColor("#FFA500"), lineWidth(3f)))
             style.addLayer(LineLayer("bypass-rock-layer-dev", "laguna-source-dev").withFilter(eq(get("special:nav:bypass"), "rock")).withProperties(lineColor("#800080"), lineWidth(3f)))
+            style.addLayer(LineLayer("rivers-layer-dev", "laguna-source-dev").withFilter(eq(get("waterway"), "river")).withProperties(lineColor("#00AAFF"), lineWidth(2.5f), lineOpacity(0.8f)))
             style.addLayer(LineLayer("canals-layer-dev", "laguna-source-dev").withFilter(eq(get("waterway"), "canal")).withProperties(lineColor("#FF00FF"), lineWidth(2f), lineOpacity(0.7f)))
             style.addLayer(LineLayer("mare-marker-dev", "laguna-source-dev").withFilter(eq(get("special:mare"), "yes")).withProperties(lineColor("#0000FF"), lineWidth(2f), lineDasharray(arrayOf(2f, 2f))))
             style.addLayer(LineLayer("laguna-marker-dev", "laguna-source-dev").withFilter(eq(get("special:laguna"), "yes")).withProperties(lineColor("#FFFF00"), lineWidth(2f), lineDasharray(arrayOf(2f, 2f))))
@@ -300,9 +315,96 @@ class DevToolsFragment : Fragment() {
         } catch (e: Exception) { e.printStackTrace() }
     }
 
+    // =================================================================
+    // SIMULATORE BARCA
+    // =================================================================
+
+    private fun startSimulator() {
+        val sim = SimulatedPositionProvider()
+        // Punto di partenza = centro mappa corrente
+        mapLibre?.cameraPosition?.target?.let {
+            sim.setPosition(it.latitude, it.longitude)
+        }
+        simProvider = sim
+
+        // Layer per la barca simulata
+        mapLibre?.getStyle { style ->
+            if (style.getSource(SOURCE_SIM_BOAT) == null) {
+                style.addSource(GeoJsonSource(SOURCE_SIM_BOAT, buildSimPointGeoJson(sim.currentLat, sim.currentLon)))
+                style.addLayer(
+                    CircleLayer(LAYER_SIM_BOAT, SOURCE_SIM_BOAT).withProperties(
+                        circleColor("#00FF88"),
+                        circleRadius(10f),
+                        circleStrokeColor("#FFFFFF"),
+                        circleStrokeWidth(2.5f)
+                    )
+                )
+            }
+        }
+
+        binding.joystick.onMove = { normX, normY, magnitude ->
+            val bearing = Math.toDegrees(atan2(normX.toDouble(), -normY.toDouble())).toFloat()
+            sim.setMovement(bearing, magnitude * 30f) // max 30 nodi
+        }
+
+        sim.start { location -> onSimFix(location) }
+    }
+
+    private fun stopSimulator() {
+        simProvider?.stop()
+        simProvider = null
+        binding.joystick.onMove = null
+        mapLibre?.getStyle { style ->
+            style.removeLayer(LAYER_SIM_BOAT)
+            style.removeSource(SOURCE_SIM_BOAT)
+        }
+        binding.tvDevStatus.text = "MODALITÀ DEBUG"
+    }
+
+    private fun onSimFix(location: Location) {
+        val pos = LatLng(location.latitude, location.longitude)
+        val speedKn  = location.speed * 3600f / 1852f
+        val limitKn  = routingEngine.getMaxSpeedKnotsAt(pos)
+        val limitStr = if (limitKn != null) "%.0f kn".format(limitKn) else "--"
+        val overLimit = limitKn != null && speedKn > limitKn
+        val bearingStr = "%d°".format(location.bearing.roundToInt())
+        val isAtSea = routingEngine.isAtSea(pos)
+        val zoneStr = if (isAtSea) "MARE" else "LAGUNA"
+
+        binding.tvSimStatus.text = "Barca: %.6f, %.6f  [%s]\nVelocità: %.1f kn  Heading: %s\nLimite canale: %s%s".format(
+            location.latitude, location.longitude, zoneStr,
+            speedKn, bearingStr,
+            limitStr, if (overLimit) "  ⚠️ SUPERATO!" else ""
+        )
+        binding.tvSimStatus.setTextColor(
+            if (overLimit) android.graphics.Color.parseColor("#FF4444")
+            else android.graphics.Color.WHITE
+        )
+
+        // Aggiorna posizione barca sulla mappa
+        mapLibre?.getStyle { style ->
+            (style.getSource(SOURCE_SIM_BOAT) as? GeoJsonSource)
+                ?.setGeoJson(buildSimPointGeoJson(location.latitude, location.longitude))
+        }
+    }
+
+    private fun buildSimPointGeoJson(lat: Double, lon: Double): String {
+        val coords = JsonArray().apply { add(lon); add(lat) }
+        val geom   = JsonObject().apply { addProperty("type", "Point"); add("coordinates", coords) }
+        val feat   = JsonObject().apply {
+            addProperty("type", "Feature")
+            add("properties", JsonObject())
+            add("geometry", geom)
+        }
+        return JsonObject().apply {
+            addProperty("type", "FeatureCollection")
+            add("features", JsonArray().apply { add(feat) })
+        }.toString()
+    }
+
     override fun onStart() { super.onStart(); binding.mapViewDev.onStart() }
     override fun onResume() { super.onResume(); binding.mapViewDev.onResume() }
-    override fun onPause() { super.onPause(); binding.mapViewDev.onPause() }
+    override fun onPause() { super.onPause(); binding.mapViewDev.onPause(); simProvider?.stop() }
     override fun onStop() { super.onStop(); binding.mapViewDev.onStop() }
     override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); binding.mapViewDev.onSaveInstanceState(outState) }
     override fun onLowMemory() { super.onLowMemory(); binding.mapViewDev.onLowMemory() }

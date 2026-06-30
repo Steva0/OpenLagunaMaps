@@ -235,17 +235,21 @@ class MapFragment : Fragment() {
     // =================================================================
 
     private fun savePin() {
-        val loc = lastGpsLocation ?: run {
-            Snackbar.make(binding.root, "GPS non ancora disponibile", Snackbar.LENGTH_SHORT).show()
-            return
-        }
+        // Se il GPS non è disponibile, usa il centro della mappa (il mirino)
+        val pinPos: LatLng = lastGpsLocation?.let { LatLng(it.latitude, it.longitude) }
+            ?: mapLibre?.cameraPosition?.target
+            ?: run {
+                Snackbar.make(binding.root, "Nessuna posizione disponibile", Snackbar.LENGTH_SHORT).show()
+                return
+            }
+        val label = if (lastGpsLocation == null) "📍 Centro mappa" else "📍 GPS"
         val pins = loadPins().toMutableList()
-        pins.add(LatLng(loc.latitude, loc.longitude))
+        pins.add(pinPos)
         savePins(pins)
         refreshMobLayer()
         Snackbar.make(
             binding.root,
-            "Posizione salvata (%.5f, %.5f)".format(loc.latitude, loc.longitude),
+            "$label salvato (%.5f, %.5f)".format(pinPos.latitude, pinPos.longitude),
             Snackbar.LENGTH_SHORT
         ).show()
     }

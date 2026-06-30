@@ -2,6 +2,7 @@ package it.lagunav.openlagunamaps.ui
 
 import android.content.Context
 import android.os.Bundle
+import androidx.appcompat.app.AppCompatDelegate
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -73,6 +74,11 @@ class SettingsFragment : Fragment() {
         binding.switchNightMode.isChecked = prefs.getBoolean("night_mode", false)
         binding.switchNightMode.setOnCheckedChangeListener { _, isChecked ->
             saveSetting("night_mode", isChecked)
+            // Riapplica il tema: AppCompatDelegate.setDefaultNightMode riavvia l'Activity
+            // in modo pulito e tutte le view si adattano automaticamente tramite DayNight
+            AppCompatDelegate.setDefaultNightMode(
+                if (isChecked) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+            )
         }
 
         binding.switchOfflineOnly.isChecked = prefs.getBoolean("offline_only", false)
