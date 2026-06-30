@@ -1,6 +1,7 @@
 package it.lagunav.openlagunamaps.ui
 
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -222,15 +223,24 @@ class DevToolsFragment : Fragment() {
         val end = endMarker?.position
         if (start != null && end != null) {
             val route = routingEngine.findRoute(start, end)
+            val coordsLine = String.format(
+                Locale.getDefault(), "A: %.6f,%.6f  B: %.6f,%.6f", start.latitude, start.longitude, end.latitude, end.longitude
+            )
             mapLibre?.let { map ->
                 routeLine?.let { map.removePolyline(it) }
                 if (route != null) {
                     routeLine = map.addPolyline(PolylineOptions().addAll(route).color(android.graphics.Color.parseColor("#00008B")).width(6f))
                     val d = routingEngine.calculateTotalDistance(route)
                     val t = routingEngine.calculateEstimatedTimeMinutes(route)
-                    binding.tvDevStatus.text = String.format(Locale.getDefault(), "ROUTING OK: %.2f km | %d min", d/1000.0, t)
+                    binding.tvDevStatus.text = String.format(
+                        Locale.getDefault(), "ROUTING OK: %.2f km | %d min | %d punti\n%s",
+                        d / 1000.0, t, route.size, coordsLine
+                    )
+                    Log.d("RoutingDebug", "findRoute start=$start end=$end -> ${route.size} punti")
+                    route.forEachIndexed { i, p -> Log.d("RoutingDebug", "  [$i] ${p.latitude},${p.longitude}") }
                 } else {
-                    binding.tvDevStatus.text = "ERRORE: ${routingEngine.lastRoutingError}"
+                    binding.tvDevStatus.text = "ERRORE: ${routingEngine.lastRoutingError}\n$coordsLine"
+                    Log.d("RoutingDebug", "findRoute start=$start end=$end -> NULL (${routingEngine.lastRoutingError})")
                 }
             }
         }
