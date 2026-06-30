@@ -29,26 +29,27 @@ class RoutingEngine(private val context: Context) {
 
     private val seaSegments = mutableListOf<Segment>()
     private val lagunaSegments = mutableListOf<Segment>()
-    // Linee guida pre-tracciate lungo la costa (tag special:nav:bypass=sea), usate come
-    // waypoint per il routing mare-mare al posto dei vertici grezzi delle zone no-go
-    // costiere (che sono sagome lunghe e frastagliate, non adatte a un grafo di visibilità).
     private val seaBypassLines = mutableListOf<List<LatLng>>()
     private var projectBoundary: List<LatLng>? = null
     private val fixedDepthAreas = mutableListOf<FixedDepthArea>()
-
-    // Punti "tip" alle bocche di porto (tag special:gate=sea_tip), portali tra mare e laguna.
     private val seaTips = mutableListOf<LatLng>()
+
+    // Dati precalcolati dal build Python (precalcola_grafo.py).
+    // Vengono caricati da graph.json insieme agli archi e nodi, quindi costo = solo lettura JSON.
+    private val nodeComponent = mutableMapOf<String, Int>()   // nodo -> id componente connessa
+    private val nodeTipBest   = mutableMapOf<String, Pair<Int, Int>>() // nodo -> (tip_idx, dist_s)
+    private var gridCellDeg  = 0.003
+    private var gridOriginLat = 0.0
+    private var gridOriginLon = 0.0
+    private val spatialGrid  = mutableMapOf<Long, MutableList<Int>>() // cellKey -> edge indices
 
     private val json = Json { ignoreUnknownKeys = true }
 
     var userAverageSpeedKmH: Double = 30.0
     var lastRoutingError: String = ""
 
-    // Velocità di default per gli archi senza "maxspeed" in tag OSM.
     private val DEFAULT_SPEED_KNOTS = 12.0
     private val DEFAULT_SPEED_KMH = DEFAULT_SPEED_KNOTS * 1.852
-
-    // Limite superiore di velocità osservato nel grafo, usato come euristica ammissibile per A*.
     private var maxSpeedKmh = DEFAULT_SPEED_KMH
 
     init {
@@ -81,6 +82,12 @@ class RoutingEngine(private val context: Context) {
                     lat = obj["lat"]?.jsonPrimitive?.double ?: 0.0,
                     lon = obj["lon"]?.jsonPrimitive?.double ?: 0.0
                 )
+                obj["c"]?.jsonPrimitive?.intOrNull?.let { nodeComponent[id] = it }
+                obj["tip_best"]?.jsonArray?.let { arr ->
+                    val ti = arr[0].jsonPrimitive.int
+                    val ds = arr[1].jsonPrimitive.int
+                    if (ti >= 0) nodeTipBest[id] = ti to ds
+                }
             }
 
             root["edges"]?.jsonArray?.forEach { element ->
@@ -96,6 +103,19 @@ class RoutingEngine(private val context: Context) {
                 adj.getOrPut(u) { mutableListOf() }.add(edge)
                 adj.getOrPut(v) { mutableListOf() }.add(edge)
                 if (speedKmh > maxSpeedKmh) maxSpeedKmh = speedKmh
+            }
+
+            root["spatial_index"]?.jsonObject?.let { si ->
+                gridCellDeg  = si["cell_deg"]?.jsonPrimitive?.double ?: gridCellDeg
+                gridOriginLat = si["origin_lat"]?.jsonPrimitive?.double ?: 0.0
+                gridOriginLon = si["origin_lon"]?.jsonPrimitive?.double ?: 0.0
+                si["cells"]?.jsonObject?.forEach { (key, arr) ->
+                    val parts = key.split(',')
+                    val row = parts[0].toLongOrNull() ?: return@forEach
+                    val col = parts[1].toLongOrNull() ?: return@forEach
+                    val cellKey = row * 100_000L + col
+                    spatialGrid[cellKey] = arr.jsonArray.mapTo(mutableListOf()) { it.jsonPrimitive.int }
+                }
             }
 
             root["no_go_areas"]?.jsonArray?.forEach { element ->
@@ -222,6 +242,16 @@ class RoutingEngine(private val context: Context) {
         val snapStart = snapToNearestEdge(start) ?: run { lastRoutingError = "Nessun canale trovato vicino al punto di partenza"; return null }
         val snapEnd = snapToNearestEdge(end) ?: run { lastRoutingError = "Nessun canale trovato vicino al punto di arrivo"; return null }
 
+        // Fail-fast: se i due archi sono in componenti connesse diverse, nessun A* può aiutare.
+        if (nodeComponent.isNotEmpty()) {
+            val cStart = nodeComponent[snapStart.edge.u]
+            val cEnd   = nodeComponent[snapEnd.edge.u]
+            if (cStart != null && cEnd != null && cStart != cEnd) {
+                lastRoutingError = "I due punti si trovano in reti di canali separate (non collegate)"
+                return null
+            }
+        }
+
         // Caso degenere: partenza e arrivo si agganciano allo stesso canale, nessun A* necessario.
         if (snapStart.edge === snapEnd.edge) {
             if (snapStart.edge.depthM in 0.1..<minDepth) {
@@ -263,11 +293,32 @@ class RoutingEngine(private val context: Context) {
         return path
     }
 
-    /** Trova, a forza bruta, l'arco del grafo più vicino al punto e il punto di proiezione su di esso. */
+    /**
+     * Snap al canale più vicino usando la griglia spaziale precalcolata.
+     * Ricerca nelle celle vicine al punto (raggio ~3 celle) invece di scorrere
+     * tutti i 15k+ archi — da O(N) a O(~30-50 archi), speedup ~300-500x.
+     * Fallback a forza bruta se la griglia non è disponibile o la cella è vuota.
+     */
     private fun snapToNearestEdge(p: LatLng): EdgeSnap? {
+        val candidateEdgeIndices = mutableSetOf<Int>()
+        if (spatialGrid.isNotEmpty()) {
+            val rowCenter = ((p.latitude  - gridOriginLat) / gridCellDeg).toInt()
+            val colCenter = ((p.longitude - gridOriginLon) / gridCellDeg).toInt()
+            for (dr in -2..2) {
+                for (dc in -2..2) {
+                    val key = (rowCenter + dr).toLong() * 100_000L + (colCenter + dc).toLong()
+                    spatialGrid[key]?.forEach { candidateEdgeIndices.add(it) }
+                }
+            }
+        }
+        val candidates = if (candidateEdgeIndices.isNotEmpty())
+            candidateEdgeIndices.map { edges[it] }
+        else
+            edges   // fallback a forza bruta
+
         var best: EdgeSnap? = null
         var bestDist = Double.MAX_VALUE
-        edges.forEach { e ->
+        candidates.forEach { e ->
             val uNode = nodes[e.u] ?: return@forEach
             val vNode = nodes[e.v] ?: return@forEach
             val proj = closestPointOnSegment(p, LatLng(uNode.lat, uNode.lon), LatLng(vNode.lat, vNode.lon))
@@ -468,13 +519,12 @@ class RoutingEngine(private val context: Context) {
     // =================================================================
     // CASO 3: LAGUNA <-> MARE, MISTO (implementato)
     //
-    // Strategia: il punto laguna e il punto mare si collegano passando per una
-    // delle bocche di porto (tip). Calcolare il percorso reale (canale A* +
-    // grafo di visibilità) per tutti i tip sarebbe pesante e quasi sempre
-    // inutile, quindi si ordinano prima i tip per sola distanza in linea
-    // d'aria (euristica leggera, nessun grafo coinvolto) e si calcola il
-    // percorso reale solo per i primi candidati finché non se ne trova uno
-    // valido; si tiene poi il migliore tra quelli effettivamente provati.
+    // Strategia: usa il Dijkstra precalcolato da ogni tip (caricato da graph.json).
+    // Lo snap del punto laguna ci dà il nodo più vicino del grafo; da lì un lookup O(1)
+    // in nodeTipBest dice immediatamente quale bocca di porto è raggiungibile più in
+    // fretta via canale — zero A* necessario per la scelta del tip. Si calcola poi
+    // solo il percorso reale verso quel tip (laguna parte + mare parte).
+    // Fallback alla classifica in linea d'aria se i dati precalcolati non sono disponibili.
     // =================================================================
 
     private fun solveMixed(start: LatLng, end: LatLng, minDepth: Double): List<LatLng>? {
@@ -485,35 +535,50 @@ class RoutingEngine(private val context: Context) {
 
         val startIsSea = isAtSea(start)
         val lagunaPoint = if (startIsSea) end else start
-        val seaPoint = if (startIsSea) start else end
+        val seaPoint    = if (startIsSea) start else end
 
-        val rankedTips = seaTips.sortedBy {
-            haversine(lagunaPoint.latitude, lagunaPoint.longitude, it.latitude, it.longitude) +
-                    haversine(seaPoint.latitude, seaPoint.longitude, it.latitude, it.longitude)
+        // Snap del punto laguna: da qui leggiamo nodeTipBest per scegliere il tip ottimale.
+        val snapLaguna = snapToNearestEdge(lagunaPoint)
+        val tipOrder: List<LatLng> = if (snapLaguna != null && nodeTipBest.isNotEmpty()) {
+            // Lookup O(1): i due nodi dell'arco snap -> prendi il best tip del nodo più vicino.
+            val bestFromU = nodeTipBest[snapLaguna.edge.u]
+            val bestFromV = nodeTipBest[snapLaguna.edge.v]
+            val bestTipIdx = when {
+                bestFromU == null -> bestFromV?.first
+                bestFromV == null -> bestFromU.first
+                bestFromU.second <= bestFromV.second -> bestFromU.first
+                else -> bestFromV.first
+            }
+            if (bestTipIdx != null && bestTipIdx in seaTips.indices) {
+                // Metti il tip migliore prima, gli altri dopo come fallback in ordine di linea d'aria
+                val best = seaTips[bestTipIdx]
+                val rest = seaTips.filterIndexed { i, _ -> i != bestTipIdx }
+                    .sortedBy { haversine(lagunaPoint.latitude, lagunaPoint.longitude, it.latitude, it.longitude) + haversine(seaPoint.latitude, seaPoint.longitude, it.latitude, it.longitude) }
+                listOf(best) + rest
+            } else {
+                seaTips.sortedBy { haversine(lagunaPoint.latitude, lagunaPoint.longitude, it.latitude, it.longitude) + haversine(seaPoint.latitude, seaPoint.longitude, it.latitude, it.longitude) }
+            }
+        } else {
+            seaTips.sortedBy { haversine(lagunaPoint.latitude, lagunaPoint.longitude, it.latitude, it.longitude) + haversine(seaPoint.latitude, seaPoint.longitude, it.latitude, it.longitude) }
         }
 
         var best: List<LatLng>? = null
         var bestTimeSec = Double.MAX_VALUE
         var evaluated = 0
-        val stopAfterSuccessCount = 2 // quanti tip provare in più dopo averne già trovato uno valido
 
-        for (tip in rankedTips) {
+        for (tip in tipOrder) {
             evaluated++
             val lagunaPart = solveLagunaToLaguna(lagunaPoint, tip, minDepth)
-            val seaPart = solveSeaToSea(seaPoint, tip)
+            val seaPart    = solveSeaToSea(seaPoint, tip)
             if (lagunaPart != null && seaPart != null) {
-                val combined = if (startIsSea) {
-                    seaPart + lagunaPart.reversed().drop(1)
-                } else {
-                    lagunaPart + seaPart.reversed().drop(1)
-                }
+                val combined = if (startIsSea) seaPart + lagunaPart.reversed().drop(1)
+                               else lagunaPart + seaPart.reversed().drop(1)
                 val t = calculateTotalTimeSeconds(combined)
-                if (t < bestTimeSec) {
-                    bestTimeSec = t
-                    best = combined
-                }
+                if (t < bestTimeSec) { bestTimeSec = t; best = combined }
             }
-            if (best != null && evaluated >= stopAfterSuccessCount) break
+            // Il primo tip è già il migliore per via canale; prova il secondo solo come
+            // fallback in caso di pescaggio troppo basso o ostacoli insormontabili.
+            if (best != null && evaluated >= 2) break
         }
 
         if (best == null) {
