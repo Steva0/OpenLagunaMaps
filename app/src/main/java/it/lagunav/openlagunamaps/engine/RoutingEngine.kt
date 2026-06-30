@@ -17,7 +17,7 @@ data class FixedDepthArea(val depth: Float, val polygon: List<LatLng>)
  *
  * Stato di avanzamento (vedi roadmap nel CLAUDE.md del progetto):
  * - LAGUNA -> LAGUNA: implementato (snap al canale più vicino + A* sul grafo canali).
- * - MARE -> MARE: TODO, non ancora reimplementato.
+ * - MARE -> MARE: implementato (grafo di visibilità sugli scogli + linee guida costiere).
  * - LAGUNA <-> MARE (misto): TODO, non ancora reimplementato.
  */
 class RoutingEngine(private val context: Context) {
@@ -29,6 +29,10 @@ class RoutingEngine(private val context: Context) {
 
     private val seaSegments = mutableListOf<Segment>()
     private val lagunaSegments = mutableListOf<Segment>()
+    // Linee guida pre-tracciate lungo la costa (tag special:nav:bypass=sea), usate come
+    // waypoint per il routing mare-mare al posto dei vertici grezzi delle zone no-go
+    // costiere (che sono sagome lunghe e frastagliate, non adatte a un grafo di visibilità).
+    private val seaBypassLines = mutableListOf<List<LatLng>>()
     private var projectBoundary: List<LatLng>? = null
     private val fixedDepthAreas = mutableListOf<FixedDepthArea>()
 
@@ -146,6 +150,10 @@ class RoutingEngine(private val context: Context) {
                 val isLagunaMarker = props.containsKey("special:laguna")
                 if (isSeaMarker) for (i in 0 until lls.size - 1) seaSegments.add(Segment(lls[i], lls[i + 1]))
                 if (isLagunaMarker) for (i in 0 until lls.size - 1) lagunaSegments.add(Segment(lls[i], lls[i + 1]))
+
+                if (props["special:nav:bypass"]?.jsonPrimitive?.content == "sea" && type == "LineString") {
+                    seaBypassLines.add(lls)
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -299,10 +307,18 @@ class RoutingEngine(private val context: Context) {
     // Strategia: grafo di visibilità. Se il segmento diretto partenza->arrivo
     // non attraversa nessuna zona no-go (scogli/bassifondi), il percorso è la
     // linea retta. Altrimenti si costruisce un grafo con partenza, arrivo e
-    // tutti i vertici delle zone no-go vicine al segmento; due nodi sono
-    // collegati se il segmento fra loro non attraversa nessun ostacolo; il
-    // percorso più breve su questo grafo (Dijkstra, costo = distanza) rasenta
-    // naturalmente gli spigoli degli ostacoli.
+    // waypoint candidati; due nodi sono collegati se il segmento fra loro non
+    // attraversa nessuna zona no-go; il percorso più breve su questo grafo
+    // (Dijkstra, costo = distanza) rasenta naturalmente gli ostacoli.
+    //
+    // I waypoint candidati NON sono "tutti i vertici di ogni zona no-go": le
+    // zone no-go costiere (tag area=no_go) sono sagome lunghe e frastagliate
+    // (fino a ~60 vertici) pensate solo per il test di blocco, non per essere
+    // usate come grafo di visibilità — altrimenti il percorso zigzaga tra i
+    // loro vertici invece di seguire un profilo morbido. Per la costa si usano
+    // invece i punti delle linee guida pre-tracciate (special:nav:bypass=sea).
+    // Per gli scogli isolati (tag obstacle=rock), che sono sagome compatte,
+    // i vertici del poligono stesso vanno benissimo come waypoint.
     // =================================================================
 
     private fun solveSeaToSea(start: LatLng, end: LatLng): List<LatLng>? {
@@ -313,7 +329,8 @@ class RoutingEngine(private val context: Context) {
         }
 
         val vPoints = mutableListOf(start, end)
-        obstacles.forEach { area -> vPoints.addAll(area.polygon.dropLast(1)) }
+        obstacles.filter { it.isRock }.forEach { area -> vPoints.addAll(area.polygon.dropLast(1)) }
+        vPoints.addAll(relevantGuidePoints(start, end))
         val n = vPoints.size
 
         val dist = DoubleArray(n) { Double.MAX_VALUE }
@@ -357,14 +374,28 @@ class RoutingEngine(private val context: Context) {
 
     /** Limita gli ostacoli da considerare a quelli la cui bounding box è vicina al segmento partenza-arrivo. */
     private fun relevantObstacles(start: LatLng, end: LatLng): List<NoGoArea> {
-        val marginDeg = 0.02 // ~2 km a queste latitudini
-        val minLat = min(start.latitude, end.latitude) - marginDeg
-        val maxLat = max(start.latitude, end.latitude) + marginDeg
-        val minLon = min(start.longitude, end.longitude) - marginDeg
-        val maxLon = max(start.longitude, end.longitude) + marginDeg
+        val (minLat, maxLat, minLon, maxLon) = boundingBoxWithMargin(start, end)
         return noGoAreas.filter { area ->
             area.polygon.any { it.latitude in minLat..maxLat && it.longitude in minLon..maxLon }
         }
+    }
+
+    /** Punti delle linee guida costiere vicini al segmento partenza-arrivo, candidati come waypoint. */
+    private fun relevantGuidePoints(start: LatLng, end: LatLng): List<LatLng> {
+        val (minLat, maxLat, minLon, maxLon) = boundingBoxWithMargin(start, end)
+        return seaBypassLines.flatten().filter { it.latitude in minLat..maxLat && it.longitude in minLon..maxLon }
+    }
+
+    private data class BBox(val minLat: Double, val maxLat: Double, val minLon: Double, val maxLon: Double)
+
+    private fun boundingBoxWithMargin(start: LatLng, end: LatLng): BBox {
+        val marginDeg = 0.02 // ~2 km a queste latitudini
+        return BBox(
+            min(start.latitude, end.latitude) - marginDeg,
+            max(start.latitude, end.latitude) + marginDeg,
+            min(start.longitude, end.longitude) - marginDeg,
+            max(start.longitude, end.longitude) + marginDeg
+        )
     }
 
     /** Vero se il segmento a-b attraversa l'interno del poligono (bordi/vertici condivisi non contano). */
