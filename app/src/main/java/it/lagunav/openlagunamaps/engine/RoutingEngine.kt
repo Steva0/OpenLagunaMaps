@@ -294,12 +294,112 @@ class RoutingEngine(private val context: Context) {
     }
 
     // =================================================================
-    // CASO 2: MARE -> MARE (TODO, da reimplementare)
+    // CASO 2: MARE -> MARE (implementato)
+    //
+    // Strategia: grafo di visibilità. Se il segmento diretto partenza->arrivo
+    // non attraversa nessuna zona no-go (scogli/bassifondi), il percorso è la
+    // linea retta. Altrimenti si costruisce un grafo con partenza, arrivo e
+    // tutti i vertici delle zone no-go vicine al segmento; due nodi sono
+    // collegati se il segmento fra loro non attraversa nessun ostacolo; il
+    // percorso più breve su questo grafo (Dijkstra, costo = distanza) rasenta
+    // naturalmente gli spigoli degli ostacoli.
     // =================================================================
 
     private fun solveSeaToSea(start: LatLng, end: LatLng): List<LatLng>? {
-        lastRoutingError = "Routing mare-mare non ancora implementato (TODO)"
-        return null
+        val obstacles = relevantObstacles(start, end)
+
+        if (obstacles.none { isSegmentBlocked(start, end, it.polygon) }) {
+            return listOf(start, end)
+        }
+
+        val vPoints = mutableListOf(start, end)
+        obstacles.forEach { area -> vPoints.addAll(area.polygon.dropLast(1)) }
+        val n = vPoints.size
+
+        val dist = DoubleArray(n) { Double.MAX_VALUE }
+        val prev = IntArray(n) { -1 }
+        val visited = BooleanArray(n)
+        dist[0] = 0.0
+        val pq = PriorityQueue<Pair<Int, Double>>(compareBy { it.second })
+        pq.add(0 to 0.0)
+
+        while (pq.isNotEmpty()) {
+            val (u, d) = pq.poll()!!
+            if (visited[u]) continue
+            visited[u] = true
+            if (u == 1) break
+
+            for (v in 0 until n) {
+                if (v == u || visited[v]) continue
+                if (obstacles.any { isSegmentBlocked(vPoints[u], vPoints[v], it.polygon) }) continue
+                val nd = d + haversine(vPoints[u].latitude, vPoints[u].longitude, vPoints[v].latitude, vPoints[v].longitude)
+                if (nd < dist[v]) {
+                    dist[v] = nd
+                    prev[v] = u
+                    pq.add(v to nd)
+                }
+            }
+        }
+
+        if (dist[1] == Double.MAX_VALUE) {
+            lastRoutingError = "Nessun percorso libero da ostacoli trovato in mare aperto"
+            return null
+        }
+
+        val path = mutableListOf<LatLng>()
+        var cur = 1
+        while (cur != -1) {
+            path.add(0, vPoints[cur])
+            cur = prev[cur]
+        }
+        return path
+    }
+
+    /** Limita gli ostacoli da considerare a quelli la cui bounding box è vicina al segmento partenza-arrivo. */
+    private fun relevantObstacles(start: LatLng, end: LatLng): List<NoGoArea> {
+        val marginDeg = 0.02 // ~2 km a queste latitudini
+        val minLat = min(start.latitude, end.latitude) - marginDeg
+        val maxLat = max(start.latitude, end.latitude) + marginDeg
+        val minLon = min(start.longitude, end.longitude) - marginDeg
+        val maxLon = max(start.longitude, end.longitude) + marginDeg
+        return noGoAreas.filter { area ->
+            area.polygon.any { it.latitude in minLat..maxLat && it.longitude in minLon..maxLon }
+        }
+    }
+
+    /** Vero se il segmento a-b attraversa l'interno del poligono (bordi/vertici condivisi non contano). */
+    private fun isSegmentBlocked(a: LatLng, b: LatLng, poly: List<LatLng>): Boolean {
+        for (i in 0 until poly.size - 1) {
+            val p1 = poly[i]; val p2 = poly[i + 1]
+            if (p1 == a || p1 == b || p2 == a || p2 == b) continue
+            if (segmentsIntersect(a, b, p1, p2)) return true
+        }
+        for (step in 1..9) {
+            val f = step / 10.0
+            val p = LatLng(a.latitude + (b.latitude - a.latitude) * f, a.longitude + (b.longitude - a.longitude) * f)
+            if (containsPoint(poly, p)) return true
+        }
+        return false
+    }
+
+    private fun segmentsIntersect(p1: LatLng, q1: LatLng, p2: LatLng, q2: LatLng): Boolean {
+        fun orientation(p: LatLng, q: LatLng, r: LatLng): Int {
+            val v = (q.latitude - p.latitude) * (r.longitude - q.longitude) - (q.longitude - p.longitude) * (r.latitude - q.latitude)
+            if (abs(v) < 1e-15) return 0
+            return if (v > 0) 1 else 2
+        }
+        fun onSegment(p: LatLng, a: LatLng, b: LatLng): Boolean =
+            p.longitude <= max(a.longitude, b.longitude) && p.longitude >= min(a.longitude, b.longitude) &&
+                    p.latitude <= max(a.latitude, b.latitude) && p.latitude >= min(a.latitude, b.latitude)
+
+        val o1 = orientation(p1, q1, p2); val o2 = orientation(p1, q1, q2)
+        val o3 = orientation(p2, q2, p1); val o4 = orientation(p2, q2, q1)
+        if (o1 != o2 && o3 != o4) return true
+        if (o1 == 0 && onSegment(p2, p1, q1)) return true
+        if (o2 == 0 && onSegment(q2, p1, q1)) return true
+        if (o3 == 0 && onSegment(p1, p2, q2)) return true
+        if (o4 == 0 && onSegment(q1, p2, q2)) return true
+        return false
     }
 
     // =================================================================
@@ -325,13 +425,19 @@ class RoutingEngine(private val context: Context) {
         return (calculateTotalTimeSeconds(p) / 60.0).toInt()
     }
 
-    // Approssimazione: la distanza totale del percorso disegnato viene divisa per la
-    // velocità di default. Le velocità reali per-arco sono già usate internamente da
-    // A* per scegliere il percorso più veloce, ma si perdono una volta che il risultato
-    // è appiattito in una semplice lista di punti.
+    // Approssimazione: le velocità reali per-arco usate internamente da A* per la
+    // laguna si perdono una volta che il risultato è appiattito in una lista di punti,
+    // quindi qui si ricade sulla velocità di default per i tratti in laguna. I tratti
+    // in mare aperto usano invece la velocità di crociera configurata dall'utente.
     fun calculateTotalTimeSeconds(path: List<LatLng>): Double {
-        val totalDist = calculateTotalDistance(path)
-        return (totalDist / 1000.0) / DEFAULT_SPEED_KMH * 3600.0
+        var totalSec = 0.0
+        for (i in 0 until path.size - 1) {
+            val dist = haversine(path[i].latitude, path[i].longitude, path[i + 1].latitude, path[i + 1].longitude)
+            val isAtSeaSegment = isAtSea(path[i]) && isAtSea(path[i + 1])
+            val speed = if (isAtSeaSegment) userAverageSpeedKmH else DEFAULT_SPEED_KMH
+            totalSec += (dist / 1000.0) / speed * 3600.0
+        }
+        return totalSec
     }
 
     fun calculateTotalDistance(path: List<LatLng>): Double {
