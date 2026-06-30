@@ -18,7 +18,7 @@ data class FixedDepthArea(val depth: Float, val polygon: List<LatLng>)
  * Stato di avanzamento (vedi roadmap nel CLAUDE.md del progetto):
  * - LAGUNA -> LAGUNA: implementato (snap al canale più vicino + A* sul grafo canali).
  * - MARE -> MARE: implementato (grafo di visibilità sugli scogli + linee guida costiere).
- * - LAGUNA <-> MARE (misto): TODO, non ancora reimplementato.
+ * - LAGUNA <-> MARE (misto): implementato (passa per la bocca di porto più conveniente).
  */
 class RoutingEngine(private val context: Context) {
 
@@ -441,12 +441,60 @@ class RoutingEngine(private val context: Context) {
     }
 
     // =================================================================
-    // CASO 3: LAGUNA <-> MARE, MISTO (TODO, da reimplementare)
+    // CASO 3: LAGUNA <-> MARE, MISTO (implementato)
+    //
+    // Strategia: il punto laguna e il punto mare si collegano passando per una
+    // delle bocche di porto (tip). Calcolare il percorso reale (canale A* +
+    // grafo di visibilità) per tutti i tip sarebbe pesante e quasi sempre
+    // inutile, quindi si ordinano prima i tip per sola distanza in linea
+    // d'aria (euristica leggera, nessun grafo coinvolto) e si calcola il
+    // percorso reale solo per i primi candidati finché non se ne trova uno
+    // valido; si tiene poi il migliore tra quelli effettivamente provati.
     // =================================================================
 
     private fun solveMixed(start: LatLng, end: LatLng, minDepth: Double): List<LatLng>? {
-        lastRoutingError = "Routing misto laguna/mare non ancora implementato (TODO)"
-        return null
+        if (seaTips.isEmpty()) {
+            lastRoutingError = "Nessuna bocca di porto (tip) disponibile nel dataset"
+            return null
+        }
+
+        val startIsSea = isAtSea(start)
+        val lagunaPoint = if (startIsSea) end else start
+        val seaPoint = if (startIsSea) start else end
+
+        val rankedTips = seaTips.sortedBy {
+            haversine(lagunaPoint.latitude, lagunaPoint.longitude, it.latitude, it.longitude) +
+                    haversine(seaPoint.latitude, seaPoint.longitude, it.latitude, it.longitude)
+        }
+
+        var best: List<LatLng>? = null
+        var bestTimeSec = Double.MAX_VALUE
+        var evaluated = 0
+        val stopAfterSuccessCount = 2 // quanti tip provare in più dopo averne già trovato uno valido
+
+        for (tip in rankedTips) {
+            evaluated++
+            val lagunaPart = solveLagunaToLaguna(lagunaPoint, tip, minDepth)
+            val seaPart = solveSeaToSea(seaPoint, tip)
+            if (lagunaPart != null && seaPart != null) {
+                val combined = if (startIsSea) {
+                    seaPart + lagunaPart.reversed().drop(1)
+                } else {
+                    lagunaPart + seaPart.reversed().drop(1)
+                }
+                val t = calculateTotalTimeSeconds(combined)
+                if (t < bestTimeSec) {
+                    bestTimeSec = t
+                    best = combined
+                }
+            }
+            if (best != null && evaluated >= stopAfterSuccessCount) break
+        }
+
+        if (best == null) {
+            lastRoutingError = "Nessuna bocca di porto raggiungibile (pescaggio insufficiente o ostacoli)"
+        }
+        return best
     }
 
     // =================================================================
