@@ -185,6 +185,32 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
+    <!-- Bussola custom: top-right sotto la barra di ricerca.
+         Visibile quando la mappa e' ruotata (follow mode o rotazione manuale).
+         Tap: esce da follow mode e resetta il nord. La "N" rossa ruota con la mappa. -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/card_compass"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="88dp"
+        android:layout_marginEnd="12dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="#CC003366"
+        app:cardCornerRadius="22dp"
+        app:cardElevation="4dp">
+
+        <TextView
+            android:id="@+id/tv_compass"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="N"
+            android:textColor="#FF4444"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </androidx.cardview.widget.CardView>
+
     <!-- CENTRA: visibile solo quando followMode=false (camera libera).
          Nascosto con GONE quando la camera sta gia' seguendo la barca. -->
     <LinearLayout

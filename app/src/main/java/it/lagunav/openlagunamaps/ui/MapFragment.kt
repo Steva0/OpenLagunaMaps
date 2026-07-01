@@ -13,7 +13,7 @@ import android.location.Location
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.Gravity
+
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -211,11 +211,9 @@ class MapFragment : Fragment() {
             map.uiSettings.isAttributionEnabled = false
             map.uiSettings.isLogoEnabled        = false
 
-            // Bussola nativa MapLibre: top-right, sotto la search bar.
-            // Appare quando la mappa è ruotata, tap → ritorna a nord.
-            map.uiSettings.isCompassEnabled = true
-            map.uiSettings.setCompassGravity(Gravity.TOP or Gravity.END)
-            map.uiSettings.setCompassMargins(0, 88.dpToPx(requireContext()), 12.dpToPx(requireContext()), 0)
+            // Disabiliamo la bussola built-in di MapLibre e usiamo la nostra (card_compass):
+            // così possiamo gestire il tap per uscire da follow mode + reset nord.
+            map.uiSettings.isCompassEnabled = false
 
             val styleUrl = if (prefs.getBoolean(KEY_NIGHT_MODE, false)) STYLE_NIGHT else STYLE_DAY
             map.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
@@ -458,7 +456,16 @@ class MapFragment : Fragment() {
                             ))
                         }
 
-                        // 2. Icona barca a 30fps con rotazione smooth (usa smoothedBearing, non drBearing)
+                        // 2. Bussola custom: ruota la "N" in senso opposto al bearing della mappa.
+                        //    Visibile quando siamo in follow mode (mappa ruotata) o bearing != 0.
+                        val compassRotation = (-smoothedBearing).toFloat()
+                        _binding?.let { b ->
+                            val showCompass = followMode || Math.abs(smoothedBearing % 360) > 2.0
+                            b.cardCompass.visibility = if (showCompass) View.VISIBLE else View.GONE
+                            b.tvCompass.rotation = compassRotation
+                        }
+
+                        // 3. Icona barca a 30fps con rotazione smooth (usa smoothedBearing, non drBearing)
                         map.getStyle { style ->
                             (style.getSource(SOURCE_GPS) as? GeoJsonSource)
                                 ?.setGeoJson(buildBoatGeoJson(predLat, predLon, smoothedBearing.toFloat()))
@@ -709,10 +716,21 @@ class MapFragment : Fragment() {
     }
 
     private fun setupButtons() {
-        // CENTRA: riattiva follow e scompare
+        // CENTRA: riattiva follow mode → pulsante sparisce
         binding.fabRecentra.setOnClickListener {
             setFollowMode(true)
         }
+
+        // Bussola custom: tap → esci da follow mode e resetta la mappa verso nord
+        binding.cardCompass.setOnClickListener {
+            setFollowMode(false)
+            mapLibre?.animateCamera(
+                CameraUpdateFactory.newCameraPosition(
+                    CameraPosition.Builder().bearing(0.0).build()
+                ), 500
+            )
+        }
+
         binding.btnCancelRoute.setOnClickListener { cancelRoute() }
     }
 
