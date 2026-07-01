@@ -23,7 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.snackbar.Snackbar
+
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import it.lagunav.openlagunamaps.R
@@ -131,13 +131,18 @@ class MapFragment : Fragment() {
     private val LAYER_PREVIEW  = "preview-route-layer"
 
     // Dead-reckoning per camera fluida a 30fps
-    private var drFixTime  = 0L
-    private var drLat      = 0.0
-    private var drLon      = 0.0
-    private var drSpeedMps = 0f
-    private var drBearing  = 0f
-    // Bearing interpolato a 30fps — la camera insegue gradualmente drBearing
-    // invece di saltarci direttamente. Fattore 0.12 → ~0.6s per raggiungere il target.
+    private var drFixTime       = 0L
+    private var drLat           = 0.0
+    private var drLon           = 0.0
+    private var drSpeedMps      = 0f
+    private var drBearing       = 0f
+    // Velocità angolare calcolata tra fix consecutivi (°/s).
+    // Permette di predire il bearing CONTINUO tra un fix GPS e il successivo,
+    // esattamente come facciamo per la posizione — elimina il "ritmo 1Hz" della rotazione.
+    private var drBearingVelDegPerSec = 0f
+    private var prevDrBearing   = 0f
+    private var prevDrFixTime   = 0L
+    // Bearing interpolato a 30fps verso il target PREDETTO (non fisso)
     private var smoothedBearing = 0.0
     private val cameraHandler = Handler(Looper.getMainLooper())
     private var cameraRunnable: Runnable? = null
@@ -396,6 +401,15 @@ class MapFragment : Fragment() {
         val bearing = if (location.hasBearing()) location.bearing else drBearing
 
         drFixTime  = System.currentTimeMillis()
+        // Calcola velocità angolare (°/s) tra fix consecutivi per la predizione continua del bearing.
+        if (prevDrFixTime > 0L && drFixTime > prevDrFixTime) {
+            val dtSec = (drFixTime - prevDrFixTime) / 1000.0
+            val diff  = ((bearing - prevDrBearing + 540f) % 360f) - 180f  // angolo più corto
+            drBearingVelDegPerSec = (diff / dtSec).toFloat().coerceIn(-90f, 90f)  // max 90°/s
+        }
+        prevDrBearing  = bearing
+        prevDrFixTime  = drFixTime
+
         drLat      = location.latitude
         drLon      = location.longitude
         drSpeedMps = location.speed
@@ -425,10 +439,13 @@ class MapFragment : Fragment() {
                     val predLon    = drLon + dist * sin(bearingRad) / (111_111.0 * cos(Math.toRadians(drLat)))
                     val predPos    = LatLng(predLat, predLon)
 
-                    // Bearing interpolato: fattore 0.07 → ~1.3s per raggiungere il target.
-                    // Usato sia per la camera che per la rotazione dell'icona barca:
-                    // le due rotazioni sono sincronizzate e ugualmente fluide.
-                    smoothedBearing = lerpBearing(smoothedBearing, drBearing.toDouble(), 0.07f)
+                    // Bearing PREDETTO: usa la velocità angolare per continuare a girare
+                    // tra fix GPS invece di restare fisso. Elimina il "ritmo 1Hz" della rotazione.
+                    // (identico alla predizione della posizione: ultima_val + velocità * tempo_trascorso)
+                    val predictedBearing = drBearing + drBearingVelDegPerSec * elapsed.toFloat()
+
+                    // Lerp 0.08 verso il bearing predetto (target in movimento = molto più fluido).
+                    smoothedBearing = lerpBearing(smoothedBearing, predictedBearing.toDouble(), 0.08f)
 
                     val map = mapLibre
                     if (map != null) {
@@ -541,16 +558,10 @@ class MapFragment : Fragment() {
         pendingSearchResult = null
         binding.cardSearchResult.visibility = View.GONE
 
-        val startPos = lastGpsLocation?.let { LatLng(it.latitude, it.longitude) } ?: run {
-            Snackbar.make(binding.root, "Attiva GPS o il simulatore in Dev Tools", Snackbar.LENGTH_LONG).show()
-            return
-        }
+        val startPos = lastGpsLocation?.let { LatLng(it.latitude, it.longitude) } ?: return
 
         val route = routingEngine.findRoute(startPos, dest)
-        if (route == null) {
-            Snackbar.make(binding.root, "Percorso non trovato: ${routingEngine.lastRoutingError}", Snackbar.LENGTH_LONG).show()
-            return
-        }
+        if (route == null) return  // errore silenzioso — lo stato viene mostrato nell'HUD
         activeRoute = route
         currentWaypointIdx = 0
         setFollowMode(true)
@@ -634,7 +645,7 @@ class MapFragment : Fragment() {
     }
 
     private fun onRouteFinished() {
-        Snackbar.make(binding.root, "Sei arrivato a destinazione!", Snackbar.LENGTH_LONG).show()
+        // Nessun avviso popup — il banner scomparirà e l'utente vedrà la barca alla destinazione
         cancelRoute()
     }
 
