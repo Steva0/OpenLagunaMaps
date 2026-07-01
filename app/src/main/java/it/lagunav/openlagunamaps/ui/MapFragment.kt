@@ -65,9 +65,11 @@ private const val KEY_MOB_PINS          = "mob_pins"
 private const val STYLE_DAY             = "https://tiles.openfreemap.org/styles/liberty"
 private const val STYLE_NIGHT           = "https://tiles.openfreemap.org/styles/dark"
 private const val BOAT_ICON_ID          = "boat-nav-icon"
-private const val OFF_CANAL_THRESHOLD_M = 30.0
-private const val WAYPOINT_ADVANCE_M    = 25.0
-private const val REATTACH_FOLLOW_MS    = 5_000L   // ms prima di rientrare in follow dopo uno scroll
+private const val OFF_CANAL_THRESHOLD_M  = 30.0
+private const val WAYPOINT_ADVANCE_M     = 25.0
+private const val REATTACH_FOLLOW_MS     = 5_000L
+private const val BG_REROUTE_INTERVAL_MS = 5_000L  // frequenza del controllo percorso ottimale
+private const val REROUTE_IMPROVEMENT_THRESHOLD = 0.90  // ricalcola se nuovo percorso è >10% più veloce
 
 class MapFragment : Fragment() {
 
@@ -99,20 +101,20 @@ class MapFragment : Fragment() {
     private var activeRoute: List<LatLng>? = null
     private var destination: LatLng? = null
     private var currentWaypointIdx = 0
-    private var lastRerouteTime    = 0L
+    private var bgRerouteJob: Job? = null
 
     // Ricerca
     private var pendingSearchResult: LatLng? = null
 
     // Layer IDs
-    private val SOURCE_GPS   = "gps-position-source"
-    private val SOURCE_PINS  = "mob-pins-source"
-    private val SOURCE_ROUTE = "route-source"
-    private val SOURCE_DEST  = "destination-source"
-    private val LAYER_GPS    = "gps-position-layer"
-    private val LAYER_PINS   = "mob-pins-layer"
-    private val LAYER_ROUTE  = "route-layer"
-    private val LAYER_DEST   = "destination-layer"
+    private val SOURCE_GPS        = "gps-position-source"
+    private val SOURCE_ROUTE_DONE = "route-done-source"    // tratto percorso
+    private val SOURCE_ROUTE      = "route-source"         // tratto rimanente
+    private val SOURCE_DEST       = "destination-source"
+    private val LAYER_GPS         = "gps-position-layer"
+    private val LAYER_ROUTE_DONE  = "route-done-layer"
+    private val LAYER_ROUTE       = "route-layer"
+    private val LAYER_DEST        = "destination-layer"
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -199,8 +201,6 @@ class MapFragment : Fragment() {
         val night = prefs.getBoolean(KEY_NIGHT_MODE, false)
         mapLibre?.setStyle(Style.Builder().fromUri(if (night) STYLE_NIGHT else STYLE_DAY)) { style ->
             setupAllLayers(style)
-            activeRoute?.let { drawRoute(style, it) }
-            destination?.let { drawDestination(style, it) }
         }
     }
 
@@ -214,6 +214,8 @@ class MapFragment : Fragment() {
         setupGpsLayer(style)
         setupRouteLayer(style)
         setupDestinationLayer(style)
+        activeRoute?.let { drawRouteSplit(style, it, currentWaypointIdx) }
+        destination?.let { drawDestination(style, it) }
     }
 
     private fun setupBoatIcon(style: Style) {
@@ -247,6 +249,13 @@ class MapFragment : Fragment() {
     }
 
     private fun setupRouteLayer(style: Style) {
+        // Tratto percorso (grigio, semi-trasparente)
+        style.addSource(GeoJsonSource(SOURCE_ROUTE_DONE, emptyFc()))
+        style.addLayer(LineLayer(LAYER_ROUTE_DONE, SOURCE_ROUTE_DONE).withProperties(
+            lineColor("#888888"), lineWidth(4f), lineOpacity(0.55f),
+            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+        ))
+        // Tratto rimanente (blu)
         style.addSource(GeoJsonSource(SOURCE_ROUTE, emptyFc()))
         style.addLayer(LineLayer(LAYER_ROUTE, SOURCE_ROUTE).withProperties(
             lineColor("#00008B"), lineWidth(5f), lineOpacity(0.9f),
@@ -459,20 +468,30 @@ class MapFragment : Fragment() {
         followMode = true
         reattachJob?.cancel()
 
-        mapLibre?.getStyle { style -> drawRoute(style, route); drawDestination(style, dest) }
+        mapLibre?.getStyle { style ->
+            drawRouteSplit(style, route, 0)
+            drawDestination(style, dest)
+        }
         binding.cardNavBanner.visibility = View.VISIBLE
         binding.cardSearch.visibility    = View.GONE
+        startBgReroute()
     }
 
     private fun updateNavigation(pos: LatLng) {
         val route = activeRoute ?: return
         if (currentWaypointIdx >= route.size) return
 
+        val prevIdx = currentWaypointIdx
         while (currentWaypointIdx < route.size - 1 &&
                haversineLocal(pos, route[currentWaypointIdx]) < WAYPOINT_ADVANCE_M) {
             currentWaypointIdx++
         }
         if (currentWaypointIdx >= route.size - 1) { onRouteFinished(); return }
+
+        // Aggiorna split percorso solo quando avanziamo di waypoint
+        if (currentWaypointIdx != prevIdx) {
+            mapLibre?.getStyle { style -> drawRouteSplit(style, route, currentWaypointIdx) }
+        }
 
         val nextWp    = route[currentWaypointIdx]
         val distNext  = haversineLocal(pos, nextWp)
@@ -488,11 +507,7 @@ class MapFragment : Fragment() {
             binding.cardNavBanner.setCardBackgroundColor(Color.parseColor("#CC880000"))
             binding.tvNavInstruction.text = "Fuori canale! (%.0f m)".format(distCanal)
             binding.tvNavDetail.text      = "ETA: %d min | %.1f km".format(etaMin, distKm)
-            val now = System.currentTimeMillis()
-            if (destination != null && now - lastRerouteTime > 3000) {
-                lastRerouteTime = now
-                setDestinationAndRoute(destination!!)
-            }
+            // Il ricalcolo è gestito dal background job ogni 5 secondi — nessun trigger qui
         } else {
             binding.cardNavBanner.setCardBackgroundColor(Color.parseColor("#CC003366"))
             binding.tvNavInstruction.text = "$arrow  %.0f m".format(distNext)
@@ -501,13 +516,15 @@ class MapFragment : Fragment() {
     }
 
     private fun cancelRoute() {
+        bgRerouteJob?.cancel()
         activeRoute = null; destination = null; currentWaypointIdx = 0
         followMode = false; reattachJob?.cancel()
         binding.cardNavBanner.visibility = View.GONE
         binding.cardSearch.visibility    = View.VISIBLE
         mapLibre?.getStyle { style ->
-            (style.getSource(SOURCE_ROUTE) as? GeoJsonSource)?.setGeoJson(emptyFc())
-            (style.getSource(SOURCE_DEST)  as? GeoJsonSource)?.setGeoJson(emptyFc())
+            (style.getSource(SOURCE_ROUTE)      as? GeoJsonSource)?.setGeoJson(emptyFc())
+            (style.getSource(SOURCE_ROUTE_DONE) as? GeoJsonSource)?.setGeoJson(emptyFc())
+            (style.getSource(SOURCE_DEST)       as? GeoJsonSource)?.setGeoJson(emptyFc())
         }
     }
 
@@ -587,15 +604,55 @@ class MapFragment : Fragment() {
     // HELPER GEOJSON
     // =================================================================
 
-    private fun drawRoute(style: Style, route: List<LatLng>) {
-        val coords = JsonArray().also { arr -> route.forEach { p -> arr.add(JsonArray().apply { add(p.longitude); add(p.latitude) }) } }
-        val feat   = JsonObject().apply {
-            addProperty("type","Feature"); add("properties", JsonObject())
-            add("geometry", JsonObject().apply { addProperty("type","LineString"); add("coordinates", coords) })
+    /** Disegna il percorso diviso in tratto percorso (grigio) e tratto rimanente (blu). */
+    private fun drawRouteSplit(style: Style, route: List<LatLng>, splitIdx: Int) {
+        fun makeLineGeoJson(pts: List<LatLng>): String {
+            val coords = JsonArray().also { arr -> pts.forEach { p -> arr.add(JsonArray().apply { add(p.longitude); add(p.latitude) }) } }
+            val feat   = JsonObject().apply {
+                addProperty("type","Feature"); add("properties", JsonObject())
+                add("geometry", JsonObject().apply { addProperty("type","LineString"); add("coordinates", coords) })
+            }
+            return JsonObject().apply { addProperty("type","FeatureCollection"); add("features", JsonArray().apply { add(feat) }) }.toString()
         }
-        (style.getSource(SOURCE_ROUTE) as? GeoJsonSource)?.setGeoJson(
-            JsonObject().apply { addProperty("type","FeatureCollection"); add("features", JsonArray().apply { add(feat) }) }.toString()
-        )
+        val done      = if (splitIdx > 0) route.subList(0, splitIdx + 1) else emptyList()
+        val remaining = if (splitIdx < route.size) route.subList(splitIdx, route.size) else emptyList()
+        if (done.size >= 2)      (style.getSource(SOURCE_ROUTE_DONE) as? GeoJsonSource)?.setGeoJson(makeLineGeoJson(done))
+        else                     (style.getSource(SOURCE_ROUTE_DONE) as? GeoJsonSource)?.setGeoJson(emptyFc())
+        if (remaining.size >= 2) (style.getSource(SOURCE_ROUTE)      as? GeoJsonSource)?.setGeoJson(makeLineGeoJson(remaining))
+        else                     (style.getSource(SOURCE_ROUTE)      as? GeoJsonSource)?.setGeoJson(emptyFc())
+    }
+
+    /**
+     * Background job: ogni 5 secondi calcola il percorso ottimale dalla posizione corrente.
+     * Se il nuovo percorso è significativamente più veloce dell'attuale tratto rimanente,
+     * lo sostituisce silenziosamente (niente Snackbar invasivo, solo aggiornamento visivo).
+     * Gestisce implicitamente anche i casi "fuori strada": il ricalcolo parte sempre dalla
+     * posizione reale, quindi se la barca ha deviato trova automaticamente il percorso migliore.
+     */
+    private fun startBgReroute() {
+        bgRerouteJob?.cancel()
+        bgRerouteJob = viewLifecycleOwner.lifecycleScope.launch {
+            while (true) {
+                delay(BG_REROUTE_INTERVAL_MS)
+                val pos  = lastGpsLocation?.let { LatLng(it.latitude, it.longitude) } ?: continue
+                val dest = destination ?: continue
+                val cur  = activeRoute ?: continue
+
+                val newRoute = withContext(Dispatchers.Default) {
+                    routingEngine.findRoute(pos, dest)
+                } ?: continue
+
+                val newTimeSec = routingEngine.calculateTotalTimeSeconds(newRoute)
+                val curRemaining = if (currentWaypointIdx < cur.size) cur.drop(currentWaypointIdx) else emptyList()
+                val curTimeSec = if (curRemaining.size >= 2) routingEngine.calculateTotalTimeSeconds(curRemaining) else Double.MAX_VALUE
+
+                if (newTimeSec < curTimeSec * REROUTE_IMPROVEMENT_THRESHOLD) {
+                    activeRoute = newRoute
+                    currentWaypointIdx = 0
+                    mapLibre?.getStyle { style -> drawRouteSplit(style, newRoute, 0) }
+                }
+            }
+        }
     }
 
     private fun drawDestination(style: Style, dest: LatLng) {
@@ -664,6 +721,7 @@ class MapFragment : Fragment() {
         stopPositionTracking()
         stopCameraLoop()
         reattachJob?.cancel()
+        bgRerouteJob?.cancel()
     }
 
     override fun onStop() {

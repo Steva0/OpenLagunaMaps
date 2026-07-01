@@ -53,8 +53,20 @@ class DevToolsFragment : Fragment() {
 
     // Simulatore
     private var simProvider: SimulatedPositionProvider? = null
-    private val SOURCE_SIM_BOAT = "sim-boat-source"
-    private val LAYER_SIM_BOAT  = "sim-boat-layer"
+    private val SOURCE_SIM_BOAT  = "sim-boat-source"
+    private val LAYER_SIM_BOAT   = "sim-boat-layer"
+    private val SOURCE_SIM_ROUTE = "sim-route-source"
+    private val SOURCE_SIM_DONE  = "sim-route-done-source"
+    private val LAYER_SIM_ROUTE  = "sim-route-layer"
+    private val LAYER_SIM_DONE   = "sim-route-done-layer"
+    private val SOURCE_SIM_DEST  = "sim-dest-source"
+    private val LAYER_SIM_DEST   = "sim-dest-layer"
+
+    // Stato navigazione locale del simulatore
+    private var simRoute: List<LatLng>? = null
+    private var simDest: LatLng? = null
+    private var simWpIdx = 0
+    private val WAYPOINT_ADV = 25.0
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -350,15 +362,87 @@ class DevToolsFragment : Fragment() {
 
         SimulatorHub.provider = sim
         // Il fix viene distribuito a DevTools (UI locale) e a MapFragment via SimulatorHub
+        SimulatorHub.provider = sim
         sim.start { location ->
             SimulatorHub.notify(location)
             onSimFix(location)
         }
+
+        // Long-tap sulla mappa per impostare la destinazione del simulatore
+        mapLibre?.addOnMapLongClickListener { point ->
+            setSimDestination(point)
+            true
+        }
+
+        // Layers per rotta simulata
+        mapLibre?.getStyle { style ->
+            if (style.getSource(SOURCE_SIM_DONE) == null) {
+                style.addSource(GeoJsonSource(SOURCE_SIM_DONE, emptyFc()))
+                style.addLayer(LineLayer(LAYER_SIM_DONE, SOURCE_SIM_DONE).withProperties(
+                    lineColor("#888888"), lineWidth(4f), lineOpacity(0.5f)
+                ))
+                style.addSource(GeoJsonSource(SOURCE_SIM_ROUTE, emptyFc()))
+                style.addLayer(LineLayer(LAYER_SIM_ROUTE, SOURCE_SIM_ROUTE).withProperties(
+                    lineColor("#00008B"), lineWidth(5f), lineOpacity(0.9f)
+                ))
+                style.addSource(GeoJsonSource(SOURCE_SIM_DEST, emptyFc()))
+                style.addLayer(CircleLayer(LAYER_SIM_DEST, SOURCE_SIM_DEST).withProperties(
+                    circleColor("#CC0000"), circleRadius(12f),
+                    circleStrokeColor("#FFFFFF"), circleStrokeWidth(2f)
+                ))
+            }
+        }
     }
+
+    private fun setSimDestination(dest: LatLng) {
+        val sim = simProvider ?: return
+        val start = LatLng(sim.currentLat, sim.currentLon)
+        val route = routingEngine.findRoute(start, dest)
+        if (route == null) {
+            binding.tvDevStatus.text = "Percorso non trovato: ${routingEngine.lastRoutingError}"
+            return
+        }
+        simRoute = route; simDest = dest; simWpIdx = 0
+        mapLibre?.getStyle { style ->
+            drawSimRouteSplit(style, route, 0)
+            setSimDestLayer(style, dest)
+        }
+        binding.tvDevStatus.text = "Percorso: ${route.size} punti, tap per aggiornare"
+    }
+
+    private fun drawSimRouteSplit(style: Style, route: List<LatLng>, idx: Int) {
+        fun lineGeoJson(pts: List<LatLng>): String {
+            if (pts.size < 2) return emptyFc()
+            val coords = com.google.gson.JsonArray().also { a -> pts.forEach { p -> a.add(com.google.gson.JsonArray().apply { add(p.longitude); add(p.latitude) }) } }
+            val feat = com.google.gson.JsonObject().apply {
+                addProperty("type","Feature"); add("properties", com.google.gson.JsonObject())
+                add("geometry", com.google.gson.JsonObject().apply { addProperty("type","LineString"); add("coordinates", coords) })
+            }
+            return com.google.gson.JsonObject().apply { addProperty("type","FeatureCollection"); add("features", com.google.gson.JsonArray().apply { add(feat) }) }.toString()
+        }
+        (style.getSource(SOURCE_SIM_DONE)  as? GeoJsonSource)?.setGeoJson(lineGeoJson(if (idx > 0) route.subList(0, idx+1) else emptyList()))
+        (style.getSource(SOURCE_SIM_ROUTE) as? GeoJsonSource)?.setGeoJson(lineGeoJson(if (idx < route.size) route.subList(idx, route.size) else emptyList()))
+    }
+
+    private fun setSimDestLayer(style: Style, dest: LatLng) {
+        val feat = com.google.gson.JsonObject().apply {
+            addProperty("type","Feature"); add("properties", com.google.gson.JsonObject())
+            add("geometry", com.google.gson.JsonObject().apply {
+                addProperty("type","Point")
+                add("coordinates", com.google.gson.JsonArray().apply { add(dest.longitude); add(dest.latitude) })
+            })
+        }
+        (style.getSource(SOURCE_SIM_DEST) as? GeoJsonSource)?.setGeoJson(
+            com.google.gson.JsonObject().apply { addProperty("type","FeatureCollection"); add("features", com.google.gson.JsonArray().apply { add(feat) }) }.toString()
+        )
+    }
+
+    private fun emptyFc() = """{"type":"FeatureCollection","features":[]}"""
 
     private fun stopSimulator() {
         simProvider?.stop()
         SimulatorHub.provider = null
+        simRoute = null; simDest = null; simWpIdx = 0
         simProvider = null
         binding.joystick.onMove = null
         mapLibre?.getStyle { style ->
@@ -369,33 +453,56 @@ class DevToolsFragment : Fragment() {
     }
 
     private fun onSimFix(location: Location) {
-        val pos = LatLng(location.latitude, location.longitude)
-        val speedKn  = location.speed * 3600f / 1852f
-        val limitKn  = routingEngine.getMaxSpeedKnotsAt(pos)
-        val limitStr = if (limitKn != null) "%.0f kn".format(limitKn) else "--"
+        val pos       = LatLng(location.latitude, location.longitude)
+        val speedKn   = location.speed * 3600f / 1852f
+        val limitKn   = routingEngine.getMaxSpeedKnotsAt(pos)
+        val limitStr  = if (limitKn != null) "%.0f kn".format(limitKn) else "--"
         val overLimit = limitKn != null && speedKn > limitKn
-        val bearingStr = "%d°".format(location.bearing.roundToInt())
-        val isAtSea = routingEngine.isAtSea(pos)
-        val zoneStr = if (isAtSea) "MARE" else "LAGUNA"
+        val isAtSea   = routingEngine.isAtSea(pos)
         val distCanal = routingEngine.distanceToNearestCanalMeters(pos)
-        val distStr = if (distCanal < Double.MAX_VALUE / 2) "%.0f m".format(distCanal) else "--"
+        val distStr   = if (distCanal < Double.MAX_VALUE / 2) "%.0f m".format(distCanal) else "--"
 
-        binding.tvSimStatus.text = "Barca: %.6f, %.6f  [%s]\nVelocità: %.1f kn  Heading: %s\nLimite canale: %s%s\nDist. canale: %s".format(
-            location.latitude, location.longitude, zoneStr,
-            speedKn, bearingStr,
-            limitStr, if (overLimit) "  ⚠️ SUPERATO!" else "",
-            distStr
+        // Aggiornamento navigazione locale simulatore
+        val route = simRoute
+        var navLine = ""
+        if (route != null && simDest != null) {
+            while (simWpIdx < route.size - 1 && haversineLocal(pos, route[simWpIdx]) < WAYPOINT_ADV) simWpIdx++
+            val remaining = if (simWpIdx < route.size) route.drop(simWpIdx) else emptyList()
+            val etaMin  = if (remaining.size >= 2) routingEngine.calculateEstimatedTimeMinutes(remaining) else 0
+            val distKm  = if (remaining.size >= 2) routingEngine.calculateTotalDistance(remaining) / 1000.0 else 0.0
+            val distWp  = if (simWpIdx < route.size) haversineLocal(pos, route[simWpIdx]) else 0.0
+            val offCanal = distCanal > 30.0 && !isAtSea
+            navLine = "\n--- NAVIGAZIONE ---\nProssimo wp: %.0f m | ETA: %d min | %.2f km\n%s".format(
+                distWp, etaMin, distKm,
+                if (offCanal) "!!! FUORI CANALE (${distStr}) !!!" else "In canale"
+            )
+            mapLibre?.getStyle { style ->
+                if (simWpIdx > 0) drawSimRouteSplit(style, route, simWpIdx)
+            }
+        }
+
+        binding.tvSimStatus.text = "%.6f, %.6f  [${if (isAtSea) "MARE" else "LAGUNA"}]\n%.1f kn / Lim $limitStr  %s  Dist.canal: $distStr%s".format(
+            location.latitude, location.longitude,
+            speedKn, "%d°".format(location.bearing.roundToInt()),
+            navLine
         )
         binding.tvSimStatus.setTextColor(
             if (overLimit) android.graphics.Color.parseColor("#FF4444")
             else android.graphics.Color.WHITE
         )
 
-        // Aggiorna posizione barca sulla mappa
         mapLibre?.getStyle { style ->
             (style.getSource(SOURCE_SIM_BOAT) as? GeoJsonSource)
                 ?.setGeoJson(buildSimPointGeoJson(location.latitude, location.longitude))
         }
+    }
+
+    private fun haversineLocal(a: LatLng, b: LatLng): Double {
+        val r = 6371000.0
+        val dlat = Math.toRadians(b.latitude - a.latitude)
+        val dlon = Math.toRadians(b.longitude - a.longitude)
+        val x = Math.sin(dlat/2)*Math.sin(dlat/2) + Math.cos(Math.toRadians(a.latitude))*Math.cos(Math.toRadians(b.latitude))*Math.sin(dlon/2)*Math.sin(dlon/2)
+        return 2*r*Math.atan2(Math.sqrt(x), Math.sqrt(1-x))
     }
 
     private fun buildSimPointGeoJson(lat: Double, lon: Double): String {
