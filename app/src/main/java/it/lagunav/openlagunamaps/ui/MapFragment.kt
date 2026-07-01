@@ -79,6 +79,9 @@ class MapFragment : Fragment() {
     /** Espone la MapLibreMap istanza al parent DevToolsFragment (es. per leggere il bearing). */
     fun mapLibreMap() = mapLibre
 
+    /** Centro attuale della camera — usato da DevTools per impostare la destinazione al volo. */
+    fun cameraCenter(): LatLng? = mapLibre?.cameraPosition?.target
+
     /** Ultima posizione GPS/sim ricevuta — accessibile da DevToolsFragment. */
     var lastGpsLocation: Location? = null
         private set
@@ -477,7 +480,8 @@ class MapFragment : Fragment() {
     // NAVIGAZIONE ATTIVA
     // =================================================================
 
-    private fun setDestinationAndRoute(dest: LatLng) {
+    /** Imposta la destinazione e calcola il percorso. Esposto per DevToolsFragment. */
+    fun setDestinationAndRoute(dest: LatLng) {
         destination = dest
         pendingSearchResult = null
         binding.cardSearchResult.visibility = View.GONE
@@ -544,7 +548,8 @@ class MapFragment : Fragment() {
         }
     }
 
-    private fun cancelRoute() {
+    /** Cancella il percorso attivo. Esposto per DevToolsFragment. */
+    fun cancelRoute() {
         bgRerouteJob?.cancel()
         activeRoute = null; destination = null; currentWaypointIdx = 0
         followMode = false; reattachJob?.cancel()

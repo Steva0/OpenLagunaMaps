@@ -4,13 +4,13 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- Container dove viene embedded MapFragment con debugMode=true -->
+    <!-- MapFragment embedded con debugMode=true -->
     <FrameLayout
         android:id="@+id/map_container_dev"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Pannello debug sovrapposto in alto: spinner modalita' + stato simulatore -->
+    <!-- Pannello debug in alto: spinner + bottoni + stato -->
     <androidx.cardview.widget.CardView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -27,33 +27,73 @@
             android:orientation="vertical"
             android:padding="8dp">
 
+            <!-- Spinner modalità -->
             <Spinner
                 android:id="@+id/spinner_dev_mode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:backgroundTint="@color/white" />
 
+            <!-- Bottoni modalità "Percorso" -->
+            <LinearLayout
+                android:id="@+id/group_route_buttons"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:visibility="visible">
+
+                <Button
+                    android:id="@+id/btn_set_end"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="4dp"
+                    android:text="Imposta Fine"
+                    android:textSize="11sp"
+                    app:backgroundTint="#CC880000" />
+
+                <Button
+                    android:id="@+id/btn_cancel_route_dev"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:text="Cancella"
+                    android:textSize="11sp"
+                    app:backgroundTint="#CC333333" />
+            </LinearLayout>
+
+            <!-- Bottone modalità "Test Tips" -->
+            <Button
+                android:id="@+id/btn_test_tips"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:layout_marginTop="6dp"
+                android:text="Test Tips (bocche di porto)"
+                android:textSize="11sp"
+                android:visibility="gone"
+                app:backgroundTint="#CC005580" />
+
+            <!-- Stato: info simulatore / debug -->
             <TextView
                 android:id="@+id/tv_dev_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
                 android:fontFamily="monospace"
-                android:text="Seleziona modalita'"
+                android:text="Simulatore pronto — muovi la barca col joystick"
                 android:textColor="#FF00FF"
-                android:textSize="10sp"
-                android:textStyle="bold" />
+                android:textSize="9sp" />
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- Joystick simulatore (fondo centro, visibile solo in modalita' sim) -->
+    <!-- Joystick simulatore: SEMPRE visibile in Dev Tools (fondo centro) -->
     <androidx.cardview.widget.CardView
         android:id="@+id/card_sim"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="8dp"
-        android:visibility="gone"
+        android:layout_marginBottom="12dp"
         app:cardBackgroundColor="#CC111111"
         app:cardCornerRadius="100dp"
         app:cardElevation="4dp">
