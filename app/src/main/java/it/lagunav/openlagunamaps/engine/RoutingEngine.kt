@@ -191,7 +191,10 @@ class RoutingEngine(private val context: Context) {
     // ROUTING CORE INTERFACE
     // =================================================================
 
-    fun findRoute(start: LatLng, end: LatLng, minDepth: Double = 0.5): List<LatLng>? {
+    // minDepth = 0.0 (default) = nessun filtro profondità.
+    // Il dato batimetrico è disponibile ma usato per informazione, non come blocco.
+    // In futuro si potrà passare il pescaggio reale dell'utente.
+    fun findRoute(start: LatLng, end: LatLng, minDepth: Double = 0.0): List<LatLng>? {
         lastRoutingError = ""
         val safeStart = escapeFromNoGo(start)
         val safeEnd = escapeFromNoGo(end)
@@ -254,7 +257,7 @@ class RoutingEngine(private val context: Context) {
 
         // Caso degenere: partenza e arrivo si agganciano allo stesso canale, nessun A* necessario.
         if (snapStart.edge === snapEnd.edge) {
-            if (snapStart.edge.depthM in 0.1..<minDepth) {
+            if (minDepth > 0.0 && snapStart.edge.depthM in 0.1..<minDepth) {
                 lastRoutingError = "Canale non navigabile (profondità minima richiesta: ${minDepth}m)"
                 return null
             }
@@ -364,7 +367,7 @@ class RoutingEngine(private val context: Context) {
             if (g > (times[u] ?: Double.MAX_VALUE)) continue
 
             neighbors(u).forEach { e ->
-                if (e.depthM in 0.1..<minDepth) return@forEach
+                if (minDepth > 0.0 && e.depthM in 0.1..<minDepth) return@forEach
                 val v = if (e.u == u) e.v else e.u
                 val newTime = g + edgeTimeSeconds(e)
                 if (newTime < (times[v] ?: Double.MAX_VALUE)) {

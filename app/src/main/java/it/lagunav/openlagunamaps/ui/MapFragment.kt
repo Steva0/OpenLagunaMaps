@@ -73,16 +73,26 @@ private const val REROUTE_IMPROVEMENT_THRESHOLD = 0.90  // ricalcola se nuovo pe
 
 class MapFragment : Fragment() {
 
+    /** Quando true: layer extra (no-go, bypass, zone) + HUD esteso. */
+    var debugMode = false
+
+    /** Espone la MapLibreMap istanza al parent DevToolsFragment (es. per leggere il bearing). */
+    fun mapLibreMap() = mapLibre
+
+    /** Ultima posizione GPS/sim ricevuta — accessibile da DevToolsFragment. */
+    var lastGpsLocation: Location? = null
+        private set
+
     private var _binding: FragmentMapBinding? = null
     private val binding get() = _binding!!
 
     private lateinit var bathyEngine: BathymetryEngine
-    private lateinit var routingEngine: RoutingEngine
+    lateinit var routingEngine: RoutingEngine
+        private set
     private lateinit var prefs: SharedPreferences
     private var mapLibre: MapLibreMap? = null
 
     private var gnssProvider: PositionProvider? = null
-    private var lastGpsLocation: Location? = null
 
     // Dead-reckoning per camera fluida a 30fps
     private var drFixTime  = 0L
@@ -211,11 +221,30 @@ class MapFragment : Fragment() {
     private fun setupAllLayers(style: Style) {
         setupBoatIcon(style)
         setupLagunaLayers(style)
+        if (debugMode) setupDebugLayers(style)
         setupGpsLayer(style)
         setupRouteLayer(style)
         setupDestinationLayer(style)
         activeRoute?.let { drawRouteSplit(style, it, currentWaypointIdx) }
         destination?.let { drawDestination(style, it) }
+    }
+
+    private fun setupDebugLayers(style: Style) {
+        try {
+            // Questi layer leggono dalla stessa sorgente laguna-source aggiunta da setupLagunaLayers
+            style.addLayer(LineLayer("debug-nogo-layer", "laguna-source")
+                .withFilter(any(eq(get("special:nav:area"), "no_go"), eq(get("special:nav:obstacle"), "rock")))
+                .withProperties(lineColor("#FF0000"), lineWidth(2f), lineOpacity(0.8f)))
+            style.addLayer(LineLayer("debug-bypass-sea-layer", "laguna-source")
+                .withFilter(eq(get("special:nav:bypass"), "sea"))
+                .withProperties(lineColor("#FFA500"), lineWidth(2.5f)))
+            style.addLayer(LineLayer("debug-bypass-rock-layer", "laguna-source")
+                .withFilter(eq(get("special:nav:bypass"), "rock"))
+                .withProperties(lineColor("#800080"), lineWidth(2.5f)))
+            style.addLayer(LineLayer("debug-gates-layer", "laguna-source")
+                .withFilter(eq(get("special:nav:gate"), "sea"))
+                .withProperties(lineColor("#00FF00"), lineWidth(3f)))
+        } catch (_: Exception) {}
     }
 
     private fun setupBoatIcon(style: Style) {
