@@ -67,7 +67,7 @@ private const val STYLE_NIGHT           = "https://tiles.openfreemap.org/styles/
 private const val BOAT_ICON_ID          = "boat-nav-icon"
 private const val OFF_CANAL_THRESHOLD_M  = 30.0
 private const val WAYPOINT_ADVANCE_M     = 25.0
-private const val REATTACH_FOLLOW_MS     = 5_000L
+
 private const val BG_REROUTE_INTERVAL_MS = 5_000L  // frequenza del controllo percorso ottimale
 private const val REROUTE_IMPROVEMENT_THRESHOLD = 0.90  // ricalcola se nuovo percorso è >10% più veloce
 
@@ -108,7 +108,6 @@ class MapFragment : Fragment() {
 
     // Follow mode e rientro automatico
     private var followMode     = false  // vero solo quando c'è una rotta attiva
-    private var reattachJob: Job? = null
 
     // Navigazione attiva
     private var activeRoute: List<LatLng>? = null
@@ -186,17 +185,10 @@ class MapFragment : Fragment() {
                 .zoom(14.0)
                 .build()
 
-            // Scroll manuale: disattiva follow, avvia timer di rientro (solo in navigazione)
+            // Scroll manuale: disattiva follow. Riattivare con RICENTRA.
             map.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE && followMode) {
                     followMode = false
-                    reattachJob?.cancel()
-                    if (activeRoute != null) {
-                        reattachJob = viewLifecycleOwner.lifecycleScope.launch {
-                            delay(REATTACH_FOLLOW_MS)
-                            if (activeRoute != null) followMode = true
-                        }
-                    }
                 }
             }
 
@@ -499,7 +491,7 @@ class MapFragment : Fragment() {
         activeRoute = route
         currentWaypointIdx = 0
         followMode = true
-        reattachJob?.cancel()
+        
 
         mapLibre?.getStyle { style ->
             drawRouteSplit(style, route, 0)
@@ -552,7 +544,7 @@ class MapFragment : Fragment() {
     fun cancelRoute() {
         bgRerouteJob?.cancel()
         activeRoute = null; destination = null; currentWaypointIdx = 0
-        followMode = false; reattachJob?.cancel()
+        followMode = false; 
         binding.cardNavBanner.visibility = View.GONE
         binding.cardSearch.visibility    = View.VISIBLE
         mapLibre?.getStyle { style ->
@@ -626,7 +618,7 @@ class MapFragment : Fragment() {
             // In navigazione: riattiva follow (la camera tornerà automaticamente con il loop)
             if (activeRoute != null) {
                 followMode = true
-                reattachJob?.cancel()
+                
             }
             // Snap immediato alla posizione barca
             mapLibre?.animateCamera(CameraUpdateFactory.newLatLng(pos), 500)
@@ -754,7 +746,7 @@ class MapFragment : Fragment() {
         binding.mapView.onPause()
         stopPositionTracking()
         stopCameraLoop()
-        reattachJob?.cancel()
+        
         bgRerouteJob?.cancel()
     }
 

@@ -37,6 +37,10 @@ class DevToolsFragment : Fragment() {
     private var simProvider: SimulatedPositionProvider? = null
     private var childMap: MapFragment? = null
 
+    // Modalità "Simula A→B": due punti indipendenti dalla posizione della barca
+    private var simAbStart: LatLng? = null
+    private var simAbEnd: LatLng? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
@@ -73,7 +77,7 @@ class DevToolsFragment : Fragment() {
         val modes = arrayOf(
             "Calcolo Percorso",
             "Test Punte (Tips)",
-            "Zone Mare/Laguna"
+            "Simula Percorso A→B"
         )
         binding.spinnerDevMode.adapter =
             ArrayAdapter(requireContext(), android.R.layout.simple_spinner_dropdown_item, modes)
@@ -82,10 +86,9 @@ class DevToolsFragment : Fragment() {
             override fun onItemSelected(parent: AdapterView<*>?, v: View?, position: Int, id: Long) {
                 binding.groupRouteButtons.visibility = if (position == 0) View.VISIBLE else View.GONE
                 binding.btnTestTips.visibility       = if (position == 1) View.VISIBLE else View.GONE
-                when (position) {
-                    2 -> binding.tvDevStatus.text = "Blu=mare / Giallo=laguna (layer zone attivi in debug)"
-                    else -> Unit
-                }
+                binding.groupSimAb.visibility        = if (position == 2) View.VISIBLE else View.GONE
+                if (position != 2) { simAbStart = null; simAbEnd = null }
+                if (position == 0) binding.tvDevStatus.text = "Simulatore pronto — joystick per muovere"
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -112,6 +115,17 @@ class DevToolsFragment : Fragment() {
             binding.tvDevStatus.text = "Percorso cancellato"
         }
 
+        // Modalità "Simula A→B": segna A (centro camera), segna B (centro camera), calcola
+        binding.btnSetA.setOnClickListener {
+            simAbStart = childMap?.cameraCenter() ?: return@setOnClickListener
+            updateAbStatus()
+        }
+        binding.btnSetB.setOnClickListener {
+            simAbEnd = childMap?.cameraCenter() ?: return@setOnClickListener
+            updateAbStatus()
+        }
+        binding.btnCalcAb.setOnClickListener { calcAbRoute() }
+
         // Test Tips: calcola percorsi verso le 6 bocche di porto — BACKGROUND THREAD
         binding.btnTestTips.setOnClickListener {
             val engine = childMap?.routingEngine ?: return@setOnClickListener
@@ -136,6 +150,42 @@ class DevToolsFragment : Fragment() {
                     }
                 }
                 binding.tvDevStatus.text = sb.toString()
+            }
+        }
+    }
+
+    // =================================================================
+    // MODALITÀ "SIMULA PERCORSO A→B"
+    // =================================================================
+
+    private fun updateAbStatus() {
+        val a = simAbStart; val b = simAbEnd
+        val aStr = if (a != null) "A: %.5f, %.5f".format(a.latitude, a.longitude) else "A: non impostato"
+        val bStr = if (b != null) "B: %.5f, %.5f".format(b.latitude, b.longitude) else "B: non impostato"
+        binding.tvAbResult.text = "$aStr\n$bStr"
+        binding.tvAbResult.setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
+    }
+
+    private fun calcAbRoute() {
+        val engine = childMap?.routingEngine ?: return
+        val start  = simAbStart ?: run { binding.tvAbResult.text = "Segna prima il punto A"; return }
+        val end    = simAbEnd   ?: run { binding.tvAbResult.text = "Segna prima il punto B"; return }
+        binding.tvAbResult.text = "Calcolo in corso..."
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val route = withContext(Dispatchers.Default) { engine.findRoute(start, end) }
+            if (route == null) {
+                binding.tvAbResult.text = "Nessun percorso: ${engine.lastRoutingError}"
+                binding.tvAbResult.setTextColor(android.graphics.Color.parseColor("#FF4444"))
+            } else {
+                val distKm = engine.calculateTotalDistance(route) / 1000.0
+                val etaMin = engine.calculateEstimatedTimeMinutes(route)
+                val zoneA  = if (engine.isAtSea(start)) "MARE" else "LAGUNA"
+                val zoneB  = if (engine.isAtSea(end))   "MARE" else "LAGUNA"
+                binding.tvAbResult.text = "A [$zoneA] → B [$zoneB]\n%.2f km | %d min | %d punti".format(distKm, etaMin, route.size)
+                binding.tvAbResult.setTextColor(android.graphics.Color.parseColor("#88FF88"))
+                // Disegna il percorso A→B sul MapFragment embedded
+                childMap?.setDestinationAndRoute(end)
             }
         }
     }

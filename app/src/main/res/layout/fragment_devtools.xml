@@ -74,6 +74,61 @@
                 android:visibility="gone"
                 app:backgroundTint="#CC005580" />
 
+            <!-- Bottoni modalità "Simula Percorso A→B" -->
+            <LinearLayout
+                android:id="@+id/group_sim_ab"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_set_a"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:text="Segna A"
+                        android:textSize="11sp"
+                        app:backgroundTint="#CC005500" />
+
+                    <Button
+                        android:id="@+id/btn_set_b"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:text="Segna B"
+                        android:textSize="11sp"
+                        app:backgroundTint="#CC550000" />
+
+                    <Button
+                        android:id="@+id/btn_calc_ab"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="Calcola"
+                        android:textSize="11sp"
+                        app:backgroundTint="#CC003366" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_ab_result"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:fontFamily="monospace"
+                    android:text="Segna A e B, poi Calcola"
+                    android:textColor="#AAAAAA"
+                    android:textSize="9sp" />
+            </LinearLayout>
+
             <!-- Stato: info simulatore / debug -->
             <TextView
                 android:id="@+id/tv_dev_status"
