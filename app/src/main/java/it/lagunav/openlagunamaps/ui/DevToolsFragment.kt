@@ -15,6 +15,7 @@ import it.lagunav.openlagunamaps.databinding.FragmentDevtoolsBinding
 import it.lagunav.openlagunamaps.engine.BathymetryEngine
 import it.lagunav.openlagunamaps.engine.RoutingEngine
 import it.lagunav.openlagunamaps.engine.SimulatedPositionProvider
+import it.lagunav.openlagunamaps.engine.SimulatorHub
 import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
@@ -347,11 +348,17 @@ class DevToolsFragment : Fragment() {
             sim.setMovement(bearing, magnitude * 30f) // max 30 nodi
         }
 
-        sim.start { location -> onSimFix(location) }
+        SimulatorHub.provider = sim
+        // Il fix viene distribuito a DevTools (UI locale) e a MapFragment via SimulatorHub
+        sim.start { location ->
+            SimulatorHub.notify(location)
+            onSimFix(location)
+        }
     }
 
     private fun stopSimulator() {
         simProvider?.stop()
+        SimulatorHub.provider = null
         simProvider = null
         binding.joystick.onMove = null
         mapLibre?.getStyle { style ->

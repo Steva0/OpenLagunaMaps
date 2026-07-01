@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Barra di ricerca -->
+    <!-- Barra di ricerca (nascosta durante navigazione attiva) -->
     <androidx.cardview.widget.CardView
         android:id="@+id/card_search"
         android:layout_width="match_parent"
@@ -185,117 +185,36 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- Joystick simulatore (fondo centro, solo in modalita' sim) -->
-    <androidx.cardview.widget.CardView
-        android:id="@+id/card_sim"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal"
-        android:layout_marginBottom="8dp"
-        android:visibility="gone"
-        app:cardBackgroundColor="#CC111111"
-        app:cardCornerRadius="100dp"
-        app:cardElevation="4dp">
-
-        <it.lagunav.openlagunamaps.ui.JoystickView
-            android:id="@+id/joystick_map"
-            android:layout_width="140dp"
-            android:layout_height="140dp" />
-    </androidx.cardview.widget.CardView>
-
-    <!-- Colonna FAB sinistra con etichette chiare -->
+    <!-- RICENTRA: unico pulsante di controllo camera, bottom-left -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
         android:layout_margin="12dp"
+        android:gravity="center"
         android:orientation="vertical">
 
-        <!-- Simulatore barca -->
-        <LinearLayout
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_recentra"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:gravity="center"
-            android:orientation="vertical">
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/fab_sim_toggle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="Attiva simulatore barca"
-                android:src="@android:drawable/ic_media_play"
-                app:backgroundTint="#AA664400"
-                app:fabSize="mini"
-                app:tint="@color/white" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SIM"
-                android:textColor="@color/white"
-                android:textSize="9sp"
-                android:textStyle="bold"
-                android:shadowColor="#000"
-                android:shadowDx="1"
-                android:shadowDy="1"
-                android:shadowRadius="2" />
-        </LinearLayout>
+            android:contentDescription="Ricentra sulla barca"
+            android:src="@android:drawable/ic_menu_mylocation"
+            app:backgroundTint="#CC003366"
+            app:fabSize="mini"
+            app:tint="@color/white" />
 
-        <!-- Orientamento mappa: Nord fisso / Course Up -->
-        <LinearLayout
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:gravity="center"
-            android:orientation="vertical">
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/fab_course_up"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="Ruota mappa con rotta"
-                android:src="@android:drawable/ic_menu_compass"
-                app:backgroundTint="#88003366"
-                app:fabSize="mini"
-                app:tint="@color/white" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="N-SU"
-                android:textColor="@color/white"
-                android:textSize="9sp"
-                android:textStyle="bold"
-                android:shadowColor="#000"
-                android:shadowDx="1"
-                android:shadowDy="1"
-                android:shadowRadius="2" />
-        </LinearLayout>
-
-        <!-- Segui posizione barca -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="vertical">
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/fab_follow"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:contentDescription="Segui posizione barca"
-                android:src="@android:drawable/ic_menu_mylocation"
-                app:backgroundTint="#CC003366"
-                app:tint="@color/white" />
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="SEGUI"
-                android:textColor="@color/white"
-                android:textSize="9sp"
-                android:textStyle="bold"
-                android:shadowColor="#000"
-                android:shadowDx="1"
-                android:shadowDy="1"
-                android:shadowRadius="2" />
-        </LinearLayout>
-
+            android:text="RICENTRA"
+            android:textColor="@color/white"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:shadowColor="#000"
+            android:shadowDx="1"
+            android:shadowDy="1"
+            android:shadowRadius="2" />
     </LinearLayout>
 
 </FrameLayout>
