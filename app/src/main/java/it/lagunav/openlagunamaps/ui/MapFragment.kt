@@ -49,6 +49,8 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import java.net.URL
 import java.nio.charset.Charset
 import java.util.Locale
+import android.os.Handler
+import android.os.Looper
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -83,6 +85,15 @@ class MapFragment : Fragment() {
     private var lastGpsLocation: Location? = null
     private var overSpeedAlerted = false
 
+    // Dead-reckoning: dati dell'ultimo fix per interpolare la posizione a 30fps
+    private var drFixTime   = 0L
+    private var drLat       = 0.0
+    private var drLon       = 0.0
+    private var drSpeedMps  = 0f
+    private var drBearing   = 0f
+    private val cameraHandler = Handler(Looper.getMainLooper())
+    private var cameraRunnable: Runnable? = null
+
     // Modalità mappa
     private var followMode = true
     private var courseUpMode = false
@@ -91,6 +102,7 @@ class MapFragment : Fragment() {
     private var activeRoute: List<LatLng>? = null
     private var destination: LatLng? = null
     private var currentWaypointIdx = 0
+    private var lastRerouteTime = 0L
 
     // Ricerca
     private var pendingSearchResult: LatLng? = null
@@ -154,8 +166,14 @@ class MapFragment : Fragment() {
                 .zoom(14.0)
                 .build()
 
-            // L'HUD mostra SOLO i dati della barca (onGpsFix), mai la posizione della camera.
-            // Nessun addOnCameraMoveListener qui.
+            // Se l'utente inizia a scorrere la mappa manualmente, disattiva follow mode
+            map.addOnCameraMoveStartedListener { reason ->
+                if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE && followMode) {
+                    followMode = false
+                    binding.fabFollow.backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(Color.parseColor("#CC003366"))
+                }
+            }
 
             // Tap lungo sulla mappa -> imposta destinazione
             map.addOnMapLongClickListener { point ->
@@ -334,8 +352,12 @@ class MapFragment : Fragment() {
             binding.fabSimToggle.backgroundTintList =
                 android.content.res.ColorStateList.valueOf(Color.parseColor("#CC886600"))
             binding.joystickMap.onMove = { normX, normY, magnitude ->
-                val bearing = Math.toDegrees(atan2(normX.toDouble(), -normY.toDouble())).toFloat()
-                sim.setMovement(bearing, magnitude * 25f)
+                val joyBearing = Math.toDegrees(atan2(normX.toDouble(), -normY.toDouble())).toFloat()
+                // In modalita' course-up la mappa e' ruotata: compensiamo l'offset della camera
+                // cosi' "su sul joystick" = avanti rispetto a dove guarda la mappa.
+                val camBearing = if (courseUpMode) mapLibre?.cameraPosition?.bearing?.toFloat() ?: 0f else 0f
+                val absBearing = (joyBearing + camBearing + 360f) % 360f
+                sim.setMovement(absBearing, magnitude * 25f)
             }
         } else {
             simProvider = null
@@ -349,30 +371,65 @@ class MapFragment : Fragment() {
 
     private fun onGpsFix(location: Location) {
         lastGpsLocation = location
-        val pos = LatLng(location.latitude, location.longitude)
-        val bearing = if (location.hasBearing()) location.bearing else 0f
+        val pos     = LatLng(location.latitude, location.longitude)
+        val bearing = if (location.hasBearing()) location.bearing else drBearing
 
-        // Aggiorna icona barca
+        // Aggiorna dati per il dead-reckoning
+        drFixTime  = System.currentTimeMillis()
+        drLat      = location.latitude
+        drLon      = location.longitude
+        drSpeedMps = location.speed
+        drBearing  = bearing
+
+        // Icona barca (1Hz)
         mapLibre?.getStyle { style ->
             (style.getSource(SOURCE_GPS) as? GeoJsonSource)
                 ?.setGeoJson(buildBoatGeoJson(location.latitude, location.longitude, bearing))
         }
 
-        // Camera
-        if (followMode) animateCameraToGps(pos, bearing)
-
         updateHud(pos)
         checkSpeedAlert(location, pos)
         updateNavigation(pos)
+        // La camera è gestita dal loop a 30fps — non animiamo qui
     }
 
-    private fun animateCameraToGps(pos: LatLng, bearing: Float) {
-        val map = mapLibre ?: return
-        val builder = CameraPosition.Builder()
-            .target(pos)
-            .zoom(map.cameraPosition.zoom.coerceAtLeast(14.0))
-        if (courseUpMode) builder.bearing(bearing.toDouble())
-        map.animateCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 800)
+    /**
+     * Avvia il loop a 30fps che muove la camera in modo fluido usando dead-reckoning:
+     * predice la posizione della barca tra un fix GPS e il successivo basandosi su
+     * velocità e bearing dell'ultimo fix. La camera si muove senza scatti.
+     */
+    private fun startCameraLoop() {
+        val r = object : Runnable {
+            override fun run() {
+                if (!followMode || drFixTime == 0L) {
+                    cameraHandler.postDelayed(this, 33)
+                    return
+                }
+                val elapsed = (System.currentTimeMillis() - drFixTime) / 1000.0
+                val bearingRad = Math.toRadians(drBearing.toDouble())
+                val dist = drSpeedMps * elapsed
+                val predLat = drLat + dist * cos(bearingRad) / 111_111.0
+                val predLon = drLon + dist * sin(bearingRad) / (111_111.0 * cos(Math.toRadians(drLat)))
+
+                val map = mapLibre
+                if (map != null) {
+                    val zoom = map.cameraPosition.zoom.coerceAtLeast(14.0)
+                    val builder = CameraPosition.Builder()
+                        .target(LatLng(predLat, predLon))
+                        .zoom(zoom)
+                    if (courseUpMode) builder.bearing(drBearing.toDouble())
+                    map.moveCamera(CameraUpdateFactory.newCameraPosition(builder.build()))
+                }
+                cameraHandler.postDelayed(this, 33)
+            }
+        }
+        cameraRunnable = r
+        cameraHandler.post(r)
+    }
+
+    private fun stopCameraLoop() {
+        cameraRunnable?.let { cameraHandler.removeCallbacks(it) }
+        cameraRunnable = null
     }
 
     // =================================================================
@@ -490,13 +547,20 @@ class MapFragment : Fragment() {
         val etaMin    = routingEngine.calculateEstimatedTimeMinutes(remaining)
         val distTotal = routingEngine.calculateTotalDistance(remaining)
 
-        val distCanal  = routingEngine.distanceToNearestCanalMeters(pos)
-        val offCanal   = activeRoute != null && distCanal > OFF_CANAL_THRESHOLD_M && !routingEngine.isAtSea(pos)
+        val distCanal = routingEngine.distanceToNearestCanalMeters(pos)
+        val offCanal  = distCanal > OFF_CANAL_THRESHOLD_M && !routingEngine.isAtSea(pos)
 
         if (offCanal) {
             binding.cardNavBanner.setCardBackgroundColor(Color.parseColor("#CC880000"))
             binding.tvNavInstruction.text = "Fuori canale! (%.0f m)".format(distCanal)
             binding.tvNavDetail.text      = "ETA: %d min | %.1f km rimanenti".format(etaMin, distTotal / 1000.0)
+
+            // Auto-reroute: se siamo fuori canale per piu' di 3 secondi, ricalcola verso la destinazione.
+            val now = System.currentTimeMillis()
+            if (destination != null && now - lastRerouteTime > 3000) {
+                lastRerouteTime = now
+                setDestinationAndRoute(destination!!)
+            }
         } else {
             binding.cardNavBanner.setCardBackgroundColor(Color.parseColor("#CC003366"))
             binding.tvNavInstruction.text = "$arrow  %.0f m".format(distNext)
@@ -585,15 +649,14 @@ class MapFragment : Fragment() {
         // Toggle simulatore barca
         binding.fabSimToggle.setOnClickListener { toggleSimulator() }
 
-        // Follow mode
+        // Follow mode — il loop 30fps gestisce il movimento, qui solo il toggle
         binding.fabFollow.setOnClickListener {
             followMode = !followMode
             binding.fabFollow.backgroundTintList = android.content.res.ColorStateList.valueOf(
                 if (followMode) Color.parseColor("#CC006699") else Color.parseColor("#CC003366")
             )
-            if (followMode) lastGpsLocation?.let { loc ->
-                animateCameraToGps(LatLng(loc.latitude, loc.longitude), loc.bearing)
-            }
+            // Se riattivo follow ma non c'è il loop (es. appena aperta la vista), lo avvio
+            if (followMode && cameraRunnable == null) startCameraLoop()
         }
 
         // Course Up
@@ -782,12 +845,14 @@ class MapFragment : Fragment() {
         super.onResume()
         binding.mapView.onResume()
         requestGpsIfNeeded()
+        startCameraLoop()
     }
 
     override fun onPause() {
         super.onPause()
         binding.mapView.onPause()
         positionProvider?.stop()
+        stopCameraLoop()
     }
 
     override fun onStop() {
