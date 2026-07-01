@@ -136,11 +136,14 @@ class MapFragment : Fragment() {
     private var drLon      = 0.0
     private var drSpeedMps = 0f
     private var drBearing  = 0f
+    // Bearing interpolato a 30fps — la camera insegue gradualmente drBearing
+    // invece di saltarci direttamente. Fattore 0.12 → ~0.6s per raggiungere il target.
+    private var smoothedBearing = 0.0
     private val cameraHandler = Handler(Looper.getMainLooper())
     private var cameraRunnable: Runnable? = null
 
-    // Follow mode e rientro automatico
-    private var followMode     = false  // vero solo quando c'è una rotta attiva
+    // Follow mode: la camera segue la barca
+    private var followMode = false
 
     // Navigazione attiva
     private var activeRoute: List<LatLng>? = null
@@ -189,6 +192,7 @@ class MapFragment : Fragment() {
         setupMap(savedInstanceState)
         setupSearch()
         setupButtons()
+        setFollowMode(false)  // inizializza visibilità pulsante CENTRA
     }
 
     // =================================================================
@@ -412,28 +416,33 @@ class MapFragment : Fragment() {
     private fun startCameraLoop() {
         val r = object : Runnable {
             override fun run() {
-                if (followMode && drFixTime > 0L) {
+                // drFixTime>0 = abbiamo almeno un fix GPS o simulato
+                if (drFixTime > 0L) {
                     val elapsed    = (System.currentTimeMillis() - drFixTime) / 1000.0
                     val bearingRad = Math.toRadians(drBearing.toDouble())
                     val dist       = drSpeedMps * elapsed
                     val predLat    = drLat + dist * cos(bearingRad) / 111_111.0
                     val predLon    = drLon + dist * sin(bearingRad) / (111_111.0 * cos(Math.toRadians(drLat)))
+                    val predPos    = LatLng(predLat, predLon)
+
+                    // Interpolazione smooth del bearing: la camera si gira gradualmente.
+                    // Fattore 0.12 → raggiunge il target in ~0.6s, abbastanza fluido e reattivo.
+                    smoothedBearing = lerpBearing(smoothedBearing, drBearing.toDouble(), 0.12f)
 
                     val map = mapLibre
                     if (map != null) {
-                        val predPos = LatLng(predLat, predLon)
-
-                        // 1. Camera (solo se in follow mode)
+                        // 1. Camera: si muove solo in follow mode
                         if (followMode) {
-                            val zoom    = map.cameraPosition.zoom.coerceAtLeast(14.0)
-                            val bearing = if (activeRoute != null) drBearing.toDouble()
-                                          else map.cameraPosition.bearing
+                            val zoom = map.cameraPosition.zoom.coerceAtLeast(14.0)
+                            // Course-up: usa smoothedBearing (fluido) solo se in navigazione
+                            val camBearing = if (activeRoute != null) smoothedBearing
+                                             else map.cameraPosition.bearing
                             map.moveCamera(CameraUpdateFactory.newCameraPosition(
-                                CameraPosition.Builder().target(predPos).zoom(zoom).bearing(bearing).build()
+                                CameraPosition.Builder().target(predPos).zoom(zoom).bearing(camBearing).build()
                             ))
                         }
 
-                        // 2. Icona barca a 30fps (più fluida dell'1Hz del GPS fix)
+                        // 2. Icona barca a 30fps — sempre, indipendentemente da follow mode
                         map.getStyle { style ->
                             (style.getSource(SOURCE_GPS) as? GeoJsonSource)
                                 ?.setGeoJson(buildBoatGeoJson(predLat, predLon, drBearing))
@@ -454,6 +463,12 @@ class MapFragment : Fragment() {
         }
         cameraRunnable = r
         cameraHandler.post(r)
+    }
+
+    /** Interpolazione lineare del bearing che gestisce il wrap 0°/360°. */
+    private fun lerpBearing(from: Double, to: Double, t: Float): Double {
+        val diff = ((to - from + 540.0) % 360.0) - 180.0
+        return (from + diff * t + 360.0) % 360.0
     }
 
     private fun stopCameraLoop() {
