@@ -218,10 +218,10 @@ class MapFragment : Fragment() {
                 .zoom(14.0)
                 .build()
 
-            // Scroll manuale: disattiva follow. Riattivare con RICENTRA.
+            // Scroll manuale: stacca il follow e mostra il pulsante CENTRA
             map.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE && followMode) {
-                    followMode = false
+                    setFollowMode(false)
                 }
             }
 
@@ -397,11 +397,8 @@ class MapFragment : Fragment() {
         drSpeedMps = location.speed
         drBearing  = bearing
 
-        mapLibre?.getStyle { style ->
-            (style.getSource(SOURCE_GPS) as? GeoJsonSource)
-                ?.setGeoJson(buildBoatGeoJson(location.latitude, location.longitude, bearing))
-        }
-
+        // Icona barca, camera e split percorso aggiornati dal loop a 30fps (smooth).
+        // Qui gestiamo solo HUD testuale e logica waypoint (1Hz va bene per questi).
         val pos = LatLng(location.latitude, location.longitude)
         updateHud(pos)
         checkSpeedHud(location, pos)
@@ -424,13 +421,32 @@ class MapFragment : Fragment() {
 
                     val map = mapLibre
                     if (map != null) {
-                        val zoom    = map.cameraPosition.zoom.coerceAtLeast(14.0)
-                        // Course-up automatico: la mappa ruota con la barca solo quando si naviga
-                        val bearing = if (activeRoute != null) drBearing.toDouble()
-                                      else map.cameraPosition.bearing
-                        map.moveCamera(CameraUpdateFactory.newCameraPosition(
-                            CameraPosition.Builder().target(LatLng(predLat, predLon)).zoom(zoom).bearing(bearing).build()
-                        ))
+                        val predPos = LatLng(predLat, predLon)
+
+                        // 1. Camera (solo se in follow mode)
+                        if (followMode) {
+                            val zoom    = map.cameraPosition.zoom.coerceAtLeast(14.0)
+                            val bearing = if (activeRoute != null) drBearing.toDouble()
+                                          else map.cameraPosition.bearing
+                            map.moveCamera(CameraUpdateFactory.newCameraPosition(
+                                CameraPosition.Builder().target(predPos).zoom(zoom).bearing(bearing).build()
+                            ))
+                        }
+
+                        // 2. Icona barca a 30fps (più fluida dell'1Hz del GPS fix)
+                        map.getStyle { style ->
+                            (style.getSource(SOURCE_GPS) as? GeoJsonSource)
+                                ?.setGeoJson(buildBoatGeoJson(predLat, predLon, drBearing))
+
+                            // 3. Split percorso a 30fps con posizione predetta come head point
+                            val route = activeRoute
+                            if (route != null && currentWaypointIdx > 0 && currentWaypointIdx < route.size) {
+                                val head = closestPointOnRouteSegment(
+                                    predPos, route[currentWaypointIdx - 1], route[currentWaypointIdx]
+                                )
+                                drawRouteSplit(style, route, currentWaypointIdx, head)
+                            }
+                        }
                     }
                 }
                 cameraHandler.postDelayed(this, 33)
@@ -523,8 +539,8 @@ class MapFragment : Fragment() {
         }
         activeRoute = route
         currentWaypointIdx = 0
-        followMode = true
-        
+        setFollowMode(true)
+
 
         mapLibre?.getStyle { style ->
             drawRouteSplit(style, route, 0)
@@ -593,7 +609,7 @@ class MapFragment : Fragment() {
     fun cancelRoute() {
         bgRerouteJob?.cancel()
         activeRoute = null; destination = null; currentWaypointIdx = 0
-        followMode = false; 
+        setFollowMode(false)
         binding.cardNavBanner.visibility = View.GONE
         binding.cardSearch.visibility    = View.VISIBLE
         mapLibre?.getStyle { style ->
@@ -657,20 +673,20 @@ class MapFragment : Fragment() {
     }
 
     // =================================================================
-    // BOTTONE RICENTRA
+    // BOTTONE CENTRA e gestione follow mode
     // =================================================================
 
+    /** Imposta il follow mode e aggiorna la visibilità del pulsante CENTRA. */
+    private fun setFollowMode(active: Boolean) {
+        followMode = active
+        // CENTRA: visibile solo quando NON stai seguendo la barca
+        _binding?.layoutCentra?.visibility = if (active) View.GONE else View.VISIBLE
+    }
+
     private fun setupButtons() {
+        // CENTRA: riattiva follow e scompare
         binding.fabRecentra.setOnClickListener {
-            val loc = lastGpsLocation ?: return@setOnClickListener
-            val pos = LatLng(loc.latitude, loc.longitude)
-            // In navigazione: riattiva follow (la camera tornerà automaticamente con il loop)
-            if (activeRoute != null) {
-                followMode = true
-                
-            }
-            // Snap immediato alla posizione barca
-            mapLibre?.animateCamera(CameraUpdateFactory.newLatLng(pos), 500)
+            setFollowMode(true)
         }
         binding.btnCancelRoute.setOnClickListener { cancelRoute() }
     }
