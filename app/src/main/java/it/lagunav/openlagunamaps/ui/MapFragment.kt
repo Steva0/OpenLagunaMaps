@@ -425,27 +425,26 @@ class MapFragment : Fragment() {
                     val predLon    = drLon + dist * sin(bearingRad) / (111_111.0 * cos(Math.toRadians(drLat)))
                     val predPos    = LatLng(predLat, predLon)
 
-                    // Interpolazione smooth del bearing: la camera si gira gradualmente.
-                    // Fattore 0.12 → raggiunge il target in ~0.6s, abbastanza fluido e reattivo.
-                    smoothedBearing = lerpBearing(smoothedBearing, drBearing.toDouble(), 0.12f)
+                    // Bearing interpolato: fattore 0.07 → ~1.3s per raggiungere il target.
+                    // Usato sia per la camera che per la rotazione dell'icona barca:
+                    // le due rotazioni sono sincronizzate e ugualmente fluide.
+                    smoothedBearing = lerpBearing(smoothedBearing, drBearing.toDouble(), 0.07f)
 
                     val map = mapLibre
                     if (map != null) {
-                        // 1. Camera: si muove solo in follow mode
+                        // 1. Camera: si muove in follow mode con course-up sempre attivo.
+                        // Quando si segue la barca, la prua è sempre in alto (track-up).
                         if (followMode) {
                             val zoom = map.cameraPosition.zoom.coerceAtLeast(14.0)
-                            // Course-up: usa smoothedBearing (fluido) solo se in navigazione
-                            val camBearing = if (activeRoute != null) smoothedBearing
-                                             else map.cameraPosition.bearing
                             map.moveCamera(CameraUpdateFactory.newCameraPosition(
-                                CameraPosition.Builder().target(predPos).zoom(zoom).bearing(camBearing).build()
+                                CameraPosition.Builder().target(predPos).zoom(zoom).bearing(smoothedBearing).build()
                             ))
                         }
 
-                        // 2. Icona barca a 30fps — sempre, indipendentemente da follow mode
+                        // 2. Icona barca a 30fps con rotazione smooth (usa smoothedBearing, non drBearing)
                         map.getStyle { style ->
                             (style.getSource(SOURCE_GPS) as? GeoJsonSource)
-                                ?.setGeoJson(buildBoatGeoJson(predLat, predLon, drBearing))
+                                ?.setGeoJson(buildBoatGeoJson(predLat, predLon, smoothedBearing.toFloat()))
 
                             // 3. Split percorso a 30fps con posizione predetta come head point
                             val route = activeRoute
