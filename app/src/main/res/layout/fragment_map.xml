@@ -266,81 +266,118 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <RelativeLayout
+            <!-- Stato errore specifico: partenza/arrivo fuori dall'area di progetto (la laguna).
+                 Solo la X per chiudere, niente Annulla/Partenza: non ha senso proporre di avviare
+                 una navigazione che non può esistere. -->
+            <LinearLayout
+                android:id="@+id/layout_route_planning_outside_area"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content">
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
 
                 <TextView
-                    android:id="@+id/tv_route_planning_time"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="-- min"
+                    android:layout_weight="1"
+                    android:text="Per avviare la navigazione devi trovarti all'interno della laguna di Venezia."
                     android:textColor="#222222"
-                    android:textSize="28sp"
-                    android:textStyle="bold" />
+                    android:textSize="15sp" />
 
-                <TextView
-                    android:id="@+id/tv_route_planning_dist"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_alignParentEnd="true"
-                    android:layout_centerVertical="true"
-                    android:text="-- km"
-                    android:textColor="#666666"
-                    android:textSize="16sp" />
-            </RelativeLayout>
-
-            <TextView
-                android:id="@+id/tv_route_destination"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:ellipsize="end"
-                android:maxLines="2"
-                android:text="Destinazione"
-                android:textColor="#222222"
-                android:textSize="18sp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Itinerario migliore, traffico normale"
-                android:textColor="#0091EA"
-                android:textSize="13sp" />
+                <ImageButton
+                    android:id="@+id/btn_route_planning_close"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Chiudi"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    app:tint="#444444" />
+            </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/layout_route_planning_normal"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:orientation="horizontal">
+                android:orientation="vertical">
 
-                <Button
-                    android:id="@+id/btn_route_planning_cancel"
-                    android:layout_width="0dp"
-                    android:layout_height="54dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="12dp"
-                    android:text="Annulla"
-                    android:textAllCaps="false"
-                    android:textColor="#666666"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    app:backgroundTint="#F2F2F2"
-                    app:cornerRadius="27dp" />
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
 
-                <Button
-                    android:id="@+id/btn_route_planning_start"
-                    android:layout_width="0dp"
-                    android:layout_height="54dp"
-                    android:layout_weight="1"
-                    android:text="Partenza"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    app:backgroundTint="#0091EA"
-                    app:cornerRadius="27dp" />
+                    <TextView
+                        android:id="@+id/tv_route_planning_time"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-- min"
+                        android:textColor="#222222"
+                        android:textSize="28sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tv_route_planning_dist"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:layout_centerVertical="true"
+                        android:text="-- km"
+                        android:textColor="#666666"
+                        android:textSize="16sp" />
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/tv_route_destination"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:text="Destinazione"
+                    android:textColor="#222222"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Itinerario migliore, traffico normale"
+                    android:textColor="#0091EA"
+                    android:textSize="13sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_route_planning_cancel"
+                        android:layout_width="0dp"
+                        android:layout_height="54dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="12dp"
+                        android:text="Annulla"
+                        android:textAllCaps="false"
+                        android:textColor="#666666"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#F2F2F2"
+                        app:cornerRadius="27dp" />
+
+                    <Button
+                        android:id="@+id/btn_route_planning_start"
+                        android:layout_width="0dp"
+                        android:layout_height="54dp"
+                        android:layout_weight="1"
+                        android:text="Partenza"
+                        android:textAllCaps="false"
+                        android:textColor="@color/white"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#0091EA"
+                        app:cornerRadius="27dp" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </androidx.cardview.widget.CardView>
@@ -367,13 +404,14 @@
 
             <TextView
                 android:id="@+id/tv_nav_arrow"
-                android:layout_width="48dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="16dp"
                 android:gravity="center"
-                android:text="↑"
+                android:minWidth="64dp"
+                android:text="0°"
                 android:textColor="@color/white"
-                android:textSize="42sp"
+                android:textSize="32sp"
                 android:textStyle="bold" />
 
             <LinearLayout
@@ -619,7 +657,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Salva nell'elenco"
+                    android:text="Salva punto"
                     android:textColor="#222222"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -634,158 +672,181 @@
                     app:tint="#444444" />
             </LinearLayout>
 
-            <EditText
-                android:id="@+id/et_save_place_name"
+            <TextView
+                android:id="@+id/tv_save_place_invalid"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
-                android:background="@null"
-                android:hint="Nome del luogo"
-                android:inputType="text"
-                android:maxLines="1"
-                android:textColor="#222222"
-                android:textSize="18sp" />
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="4dp"
-                android:background="#EEEEEE" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:text="Categoria"
-                android:textColor="#666666"
-                android:textSize="13sp"
-                android:textStyle="bold" />
+                android:text="È stato selezionato un punto fuori dall'area della laguna di Venezia. Selezione non valida."
+                android:textColor="#B00020"
+                android:textSize="15sp"
+                android:visibility="gone" />
 
             <LinearLayout
+                android:id="@+id/layout_save_place_content"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="horizontal">
+                android:orientation="vertical">
 
-                <Button
-                    android:id="@+id/btn_type_berth"
-                    android:layout_width="0dp"
-                    android:layout_height="56dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="⚓"
-                    android:textSize="22sp"
-                    app:backgroundTint="#F5F5F5"
-                    app:cornerRadius="16dp" />
+                <EditText
+                    android:id="@+id/et_save_place_name"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:background="@null"
+                    android:hint="Nome del luogo"
+                    android:imeOptions="actionDone"
+                    android:inputType="text"
+                    android:maxLength="32"
+                    android:maxLines="1"
+                    android:textColor="#222222"
+                    android:textSize="18sp" />
 
-                <Button
-                    android:id="@+id/btn_type_favorite"
-                    android:layout_width="0dp"
-                    android:layout_height="56dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="♥"
-                    android:textSize="22sp"
-                    app:backgroundTint="#F5F5F5"
-                    app:cornerRadius="16dp" />
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="4dp"
+                    android:background="#EEEEEE" />
 
-                <Button
-                    android:id="@+id/btn_type_special"
-                    android:layout_width="0dp"
-                    android:layout_height="56dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="🚩"
-                    android:textSize="22sp"
-                    app:backgroundTint="#F5F5F5"
-                    app:cornerRadius="16dp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Categoria: "
+                        android:textColor="#666666"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                    <TextView
+                        android:id="@+id/tv_save_place_type_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Luogo"
+                        android:textColor="#0091EA"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btn_type_generic"
-                    android:layout_width="0dp"
-                    android:layout_height="56dp"
-                    android:layout_weight="1"
-                    android:text="📍"
-                    android:textSize="22sp"
-                    app:backgroundTint="#F5F5F5"
-                    app:cornerRadius="16dp" />
-            </LinearLayout>
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/tv_save_place_type_label"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:gravity="center"
-                android:text="Luogo"
-                android:textColor="#0091EA"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                    <Button
+                        android:id="@+id/btn_type_berth"
+                        android:layout_width="0dp"
+                        android:layout_height="56dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="⚓"
+                        android:textSize="22sp"
+                        app:backgroundTint="#F5F5F5"
+                        app:cornerRadius="16dp" />
 
-            <EditText
-                android:id="@+id/et_save_place_notes"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:background="@drawable/bg_notes_input"
-                android:gravity="top"
-                android:hint="Aggiungi una nota su questo luogo..."
-                android:inputType="textMultiLine"
-                android:minLines="3"
-                android:padding="12dp"
-                android:textColor="#444444"
-                android:textSize="14sp" />
+                    <Button
+                        android:id="@+id/btn_type_favorite"
+                        android:layout_width="0dp"
+                        android:layout_height="56dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="♥"
+                        android:textSize="22sp"
+                        app:backgroundTint="#F5F5F5"
+                        app:cornerRadius="16dp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                    <Button
+                        android:id="@+id/btn_type_special"
+                        android:layout_width="0dp"
+                        android:layout_height="56dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="🚩"
+                        android:textSize="22sp"
+                        app:backgroundTint="#F5F5F5"
+                        app:cornerRadius="16dp" />
 
-                <com.google.android.material.floatingactionbutton.FloatingActionButton
-                    android:id="@+id/btn_save_place_delete"
-                    android:layout_width="54dp"
-                    android:layout_height="54dp"
-                    android:layout_marginEnd="8dp"
-                    android:contentDescription="Elimina"
-                    android:src="@android:drawable/ic_menu_delete"
-                    android:visibility="gone"
-                    app:backgroundTint="#D32F2F"
-                    app:elevation="0dp"
-                    app:fabCustomSize="54dp"
-                    app:maxImageSize="24dp"
-                    app:pressedTranslationZ="0dp"
-                    app:tint="@color/white" />
+                    <Button
+                        android:id="@+id/btn_type_generic"
+                        android:layout_width="0dp"
+                        android:layout_height="56dp"
+                        android:layout_weight="1"
+                        android:text="📍"
+                        android:textSize="22sp"
+                        app:backgroundTint="#F5F5F5"
+                        app:cornerRadius="16dp" />
+                </LinearLayout>
 
-                <Button
-                    android:id="@+id/btn_save_place_route"
-                    android:layout_width="0dp"
-                    android:layout_height="54dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="Itinerario"
-                    android:textAllCaps="false"
-                    android:textColor="#0091EA"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    app:backgroundTint="#F0F7FF"
-                    app:cornerRadius="27dp"
-                    app:strokeColor="#0091EA"
-                    app:strokeWidth="1dp" />
+                <EditText
+                    android:id="@+id/et_save_place_notes"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:background="@drawable/bg_notes_input"
+                    android:gravity="top"
+                    android:hint="Aggiungi una nota su questo luogo..."
+                    android:inputType="textMultiLine"
+                    android:maxLength="300"
+                    android:maxLines="3"
+                    android:minLines="3"
+                    android:padding="12dp"
+                    android:textColor="#444444"
+                    android:textSize="14sp" />
 
-                <Button
-                    android:id="@+id/btn_save_place_confirm"
-                    android:layout_width="0dp"
-                    android:layout_height="54dp"
-                    android:layout_weight="1"
-                    android:text="Salva"
-                    android:textAllCaps="false"
-                    android:textColor="@color/white"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    app:backgroundTint="#0091EA"
-                    app:cornerRadius="27dp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.floatingactionbutton.FloatingActionButton
+                        android:id="@+id/btn_save_place_delete"
+                        android:layout_width="54dp"
+                        android:layout_height="54dp"
+                        android:layout_marginEnd="8dp"
+                        android:contentDescription="Elimina"
+                        android:src="@android:drawable/ic_menu_delete"
+                        android:visibility="gone"
+                        app:backgroundTint="#D32F2F"
+                        app:elevation="0dp"
+                        app:fabCustomSize="54dp"
+                        app:maxImageSize="24dp"
+                        app:pressedTranslationZ="0dp"
+                        app:tint="@color/white" />
+
+                    <Button
+                        android:id="@+id/btn_save_place_confirm"
+                        android:layout_width="0dp"
+                        android:layout_height="54dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:text="Salva"
+                        android:textAllCaps="false"
+                        android:textColor="#0091EA"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#F0F7FF"
+                        app:cornerRadius="27dp"
+                        app:strokeColor="#0091EA"
+                        app:strokeWidth="1dp" />
+
+                    <Button
+                        android:id="@+id/btn_save_place_route"
+                        android:layout_width="0dp"
+                        android:layout_height="54dp"
+                        android:layout_weight="1"
+                        android:text="Itinerario"
+                        android:textAllCaps="false"
+                        android:textColor="@color/white"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        app:backgroundTint="#0091EA"
+                        app:cornerRadius="27dp" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </androidx.cardview.widget.CardView>

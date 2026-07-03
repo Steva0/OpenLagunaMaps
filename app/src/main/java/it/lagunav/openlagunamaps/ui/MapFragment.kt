@@ -347,6 +347,10 @@ class MapFragment : Fragment() {
 
             map.addOnMapLongClickListener { point ->
                 if (!isMapInteractionLocked()) {
+                    // Se stavamo seguendo la barca, il loop di camera ricentrerebbe
+                    // continuamente sulla barca sovrascrivendo il centraggio sul punto appena
+                    // selezionato: va staccato, altrimenti la schermata sembra non rispondere.
+                    setFollowMode(false)
                     selectedPlacePos = point
                     selectedPlaceName = routingEngine.nearestCanalName(point, 50.0) ?: "Punto sulla mappa"
                     centerPointInUpperScreen(point)
@@ -372,7 +376,7 @@ class MapFragment : Fragment() {
                     .minByOrNull { (_, screen) -> screenDistance(screen, tapScreen) }
                     ?.takeIf { (_, screen) -> screenDistance(screen, tapScreen) < tapRadiusPx }
                     ?.first
-                if (nearest != null) { editSavedPlace(nearest); true } else false
+                if (nearest != null) { setFollowMode(false); editSavedPlace(nearest); true } else false
             }
         }
     }
@@ -488,10 +492,21 @@ class MapFragment : Fragment() {
         refreshSavedPlacesLayer()
     }
 
+    /** Rimuove eventuali luoghi salvati fuori dall'area di progetto (il poligono verde): non si
+     *  possono più creare da quando c'è il controllo in openSavePlaceScreen/editSavedPlace, ma
+     *  luoghi salvati prima di questa modifica potrebbero essere rimasti fuori. Richiamata ad
+     *  ogni refresh, così l'elenco si autopulisce senza bisogno di un'azione manuale. */
+    private fun purgeSavedPlacesOutsideProject() {
+        PlacesStore.getSaved(requireContext())
+            .filterNot { routingEngine.isInsideProject(it.toLatLng()) }
+            .forEach { PlacesStore.removeSaved(requireContext(), it) }
+    }
+
     /** Rilegge PlacesStore e ridisegna tutti i luoghi salvati sulla mappa. Da richiamare dopo
      *  ogni salvataggio, e ad ogni rientro sulla schermata (l'altra istanza di MapFragment,
      *  es. in Dev Tools, ha la sua sorgente separata e potrebbe non essere aggiornata). */
     private fun refreshSavedPlacesLayer() {
+        purgeSavedPlacesOutsideProject()
         val places = PlacesStore.getSaved(requireContext())
         val features = JsonArray()
         places.forEach { place ->
@@ -624,6 +639,7 @@ class MapFragment : Fragment() {
     }
 
     private fun startGnss() {
+        gnssProvider?.stop()  // idempotente: evita di lasciare un provider precedente orfano e attivo
         if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -670,6 +686,11 @@ class MapFragment : Fragment() {
     }
 
     private fun startCameraLoop() {
+        // Idempotente: se chiamata due volte senza uno stop in mezzo (es. onResume duplicato
+        // per un fragment annidato dentro un fragment nascosto, dove la cascata onPause/onResume
+        // non è sempre garantita), la vecchia Runnable andrebbe persa ma continuerebbe comunque
+        // a ripostarsi da sola per sempre — un loop "fantasma" non più fermabile da stopCameraLoop().
+        stopCameraLoop()
         val r = object : Runnable {
             override fun run() = PerfMonitor.trace("cameraLoop.frame") { runFrame() }
 
@@ -766,6 +787,22 @@ class MapFragment : Fragment() {
     private fun stopCameraLoop() {
         cameraRunnable?.let { cameraHandler.removeCallbacks(it) }
         cameraRunnable = null
+    }
+
+    /** Esposto per DevToolsFragment: quando l'app va davvero in background, la mappa qui
+     *  incorporata (childMap, annidata in un fragment nascosto) non è garantito ricevere
+     *  onPause() in cascata su tutti i dispositivi/versioni — meglio fermarla esplicitamente
+     *  invece di scoprire un loop di camera "fantasma" rimasto attivo per sempre. Idempotente
+     *  (vedi startCameraLoop/startGnss), quindi sicuro da richiamare anche se la cascata
+     *  normale ha già fatto il suo lavoro. */
+    fun pauseTracking() {
+        stopPositionTracking()
+        stopCameraLoop()
+    }
+
+    fun resumeTracking() {
+        startPositionTracking()
+        startCameraLoop()
     }
 
     // =================================================================
@@ -968,8 +1005,17 @@ class MapFragment : Fragment() {
 
     // --- Salva luogo (schermo intero) ---
 
+    /** Mostra il modulo normale (nome/categoria/note/pulsanti) solo se il punto è dentro
+     *  l'area di progetto (il poligono verde sulla mappa): fuori da lì un luogo non si può
+     *  salvare, quindi la schermata mostra solo l'avviso e la X per chiudere. */
+    private fun applySavePlaceValidity(pos: LatLng) {
+        val valid = routingEngine.isInsideProject(pos)
+        binding.layoutSavePlaceContent.visibility = if (valid) View.VISIBLE else View.GONE
+        binding.tvSavePlaceInvalid.visibility = if (valid) View.GONE else View.VISIBLE
+    }
+
     private fun openSavePlaceScreen() {
-        if (selectedPlacePos == null) return
+        val pos = selectedPlacePos ?: return
         editingPlace = null
         binding.btnSavePlaceDelete.visibility = View.GONE
         binding.cardPlaceDetail.visibility = View.GONE
@@ -977,7 +1023,14 @@ class MapFragment : Fragment() {
         binding.etSavePlaceNotes.setText("")
         selectedSaveType = PlaceType.GENERIC
         updateSaveTypeButtons()
+        binding.cardSearch.visibility = View.GONE
         binding.cardSavePlace.visibility = View.VISIBLE
+        applySavePlaceValidity(pos)
+        // Il tap lungo su un punto nuovo salta il popup di dettaglio e apre questa schermata
+        // direttamente: senza questa chiamata il pallino rosso non compariva finché non si
+        // passava da Itinerario -> Annulla (che riapre showPlaceDetail, l'unico altro punto
+        // che disegnava il marker).
+        mapLibre?.getStyle { style -> drawDestination(style, pos) }
     }
 
     /** Tap su un pallino già salvato sulla mappa: riapre la stessa schermata precompilata,
@@ -994,6 +1047,7 @@ class MapFragment : Fragment() {
         binding.btnSavePlaceDelete.visibility = View.VISIBLE
         binding.cardSearch.visibility = View.GONE
         binding.cardSavePlace.visibility = View.VISIBLE
+        applySavePlaceValidity(place.toLatLng())
         mapLibre?.getStyle { style -> drawDestination(style, place.toLatLng()) }
         centerPointInUpperScreen(place.toLatLng())
     }
@@ -1011,13 +1065,18 @@ class MapFragment : Fragment() {
         val pos = selectedPlacePos ?: return
         val name = binding.etSavePlaceName.text.toString().trim().ifEmpty { selectedPlaceName }
         val notes = binding.etSavePlaceNotes.text.toString().trim()
+        val wasNewPlace = editingPlace == null
+        val place = SavedPlace(name, pos.latitude, pos.longitude, selectedSaveType, notes = notes)
         // addSaved() aggiorna sul posto se esiste già un luogo salvato alla stessa posizione
         // (dedup per lat/lon in PlacesStore) — non serve altra logica per l'update.
-        PlacesStore.addSaved(requireContext(), SavedPlace(name, pos.latitude, pos.longitude, selectedSaveType, notes = notes))
-        // Niente Toast: la schermata si chiude e il pallino compare/si aggiorna sulla mappa,
-        // è già conferma visiva sufficiente senza sovrapporre altri popup.
-        closeSavePlaceScreen()
+        PlacesStore.addSaved(requireContext(), place)
+        // Niente Toast: il pallino compare/si aggiorna sulla mappa, è già conferma visiva
+        // sufficiente senza sovrapporre altri popup.
         refreshSavedPlacesLayer()
+        closeSavePlaceScreen()
+        // Punto NUOVO appena salvato (non una modifica di un luogo già esistente): riapre subito
+        // la schermata di modifica, così il pulsante "Itinerario" è già lì pronto.
+        if (wasNewPlace) editSavedPlace(place)
     }
 
     private fun deleteEditingPlace() {
@@ -1049,6 +1108,7 @@ class MapFragment : Fragment() {
     private fun openRoutePlanning() {
         val dest = selectedPlacePos ?: return
         binding.cardPlaceDetail.visibility = View.GONE
+        binding.cardSearch.visibility = View.GONE
         planningDest = dest
         planningRoute = null
 
@@ -1056,6 +1116,8 @@ class MapFragment : Fragment() {
         binding.tvRouteDestination.text = canal
         binding.tvRoutePlanningTime.text = "-- min"
         binding.tvRoutePlanningDist.text = "-- km"
+        binding.layoutRoutePlanningNormal.visibility = View.VISIBLE
+        binding.layoutRoutePlanningOutsideArea.visibility = View.GONE
         binding.cardRoutePlanning.visibility = View.VISIBLE
         binding.speedometer.visibility = View.GONE
         binding.altitudeView.visibility = View.GONE
@@ -1075,6 +1137,15 @@ class MapFragment : Fragment() {
             if (planningDest != dest) return@launch  // pianificazione chiusa/sostituita nel frattempo
             planningRoute = route
             if (route == null) {
+                // Se la barca non è dentro l'area di progetto (la laguna), l'errore tecnico
+                // ("nessun canale trovato vicino al punto di partenza") non è chiaro per
+                // l'utente: mostriamo un messaggio esplicito, senza Annulla/Partenza (non ha
+                // senso proporre di avviare una navigazione che non può esistere).
+                if (!routingEngine.isInsideProject(origin)) {
+                    binding.layoutRoutePlanningNormal.visibility = View.GONE
+                    binding.layoutRoutePlanningOutsideArea.visibility = View.VISIBLE
+                    return@launch
+                }
                 binding.tvRoutePlanningTime.text = "Errore"
                 binding.tvRoutePlanningDist.text = routingEngine.lastRoutingError
                 return@launch
@@ -1193,9 +1264,24 @@ class MapFragment : Fragment() {
         } else null
         mapLibre?.getStyle { style -> drawRouteSplit(style, route, currentWaypointIdx, headPoint) }
 
-        val nextWp    = route[currentWaypointIdx]
-        val distNext  = haversineLocal(pos, nextWp)
-        val arrow     = bearingToArrow(bearingTo(pos, nextWp))
+        // Prossima svolta REALE (cambio di canale/incrocio), non il prossimo vertice del grafo
+        // (che può essere a pochi metri, su una curva dolce dello stesso canale). L'angolo è
+        // RELATIVO alla direzione di marcia attuale e arrotondato al multiplo di 45° più vicino
+        // (0°=dritto, 90°=destra, 180°=indietro/inversione a U, 270°=sinistra).
+        // Ricerca limitata a TURN_SEARCH_LOOKAHEAD vertici: senza questo limite, su un tratto
+        // dritto lungo (nessuna svolta trovata) si scorreva l'intero percorso residuo ad ogni
+        // fotogramma del loop camera, rendendo l'icona barca a scatti.
+        val turnIdx = findNextTurnIndex(route, currentWaypointIdx, TURN_SEARCH_LOOKAHEAD)
+        val targetIdx = turnIdx ?: minOf(currentWaypointIdx + TURN_SEARCH_LOOKAHEAD, route.size - 1)
+        var distNext = haversineLocal(pos, route[currentWaypointIdx])
+        for (i in currentWaypointIdx until targetIdx) distNext += haversineLocal(route[i], route[i + 1])
+        val arrow = if (turnIdx != null && turnIdx < route.size - 1) {
+            val bearingBefore = bearingTo(route[turnIdx - 1], route[turnIdx])
+            val bearingAfter  = bearingTo(route[turnIdx], route[turnIdx + 1])
+            formatTurnAngle(relativeTurnAngleDeg(bearingBefore, bearingAfter))
+        } else {
+            "0°"  // Nessuna svolta trovata entro il raggio di ricerca: si prosegue dritti.
+        }
         val remaining = route.drop(currentWaypointIdx)
         val etaMin    = PerfMonitor.trace("routingEngine.calculateEstimatedTimeMinutes") { routingEngine.calculateEstimatedTimeMinutes(remaining) }
         val distKm    = routingEngine.calculateTotalDistance(remaining) / 1000.0
@@ -1279,6 +1365,15 @@ class MapFragment : Fragment() {
         // Schermata Salva luogo
         binding.btnSavePlaceClose.setOnClickListener { closeSavePlaceScreen() }
         binding.btnSavePlaceConfirm.setOnClickListener { confirmSavePlace() }
+
+        binding.etSavePlaceNotes.setOnEditorActionListener { _, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_DONE || 
+                (event != null && event.keyCode == android.view.KeyEvent.KEYCODE_ENTER)) {
+                hideKeyboard()
+                true
+            } else false
+        }
+
         binding.btnSavePlaceDelete.setOnClickListener { deleteEditingPlace() }
         binding.btnSavePlaceRoute.setOnClickListener {
             // NON chiudiamo lo stato con closeSavePlaceScreen()/confirmSavePlace(): altrimenti
@@ -1311,6 +1406,7 @@ class MapFragment : Fragment() {
 
         // Pianificazione percorso
         binding.btnRoutePlanningCancel.setOnClickListener { closeRoutePlanning() }
+        binding.btnRoutePlanningClose.setOnClickListener { closeRoutePlanning() }
         binding.btnRoutePlanningStart.setOnClickListener { startPlannedRoute() }
     }
 
@@ -1617,10 +1713,41 @@ class MapFragment : Fragment() {
         return ((Math.toDegrees(atan2(y, x)).toFloat() + 360f) % 360f)
     }
 
-    private fun bearingToArrow(b: Float): String {
-        val a = arrayOf("^","^>",">","v>","v","v<","<","^<")
-        return a[((b + 22.5f)/45f).toInt() % 8]
+    // Oltre questa soglia (gradi) un cambio di bearing tra due segmenti consecutivi del percorso
+    // è considerato una VERA svolta di canale/incrocio, non il rumore dei vertici del grafo su
+    // una curva dolce dello stesso canale.
+    private val TURN_ANGLE_THRESHOLD_DEG = 30f
+
+    // Quanti vertici avanti cercare al massimo la prossima svolta: senza un limite, su un tratto
+    // dritto lungo si scorrerebbe l'intero percorso residuo ad ogni fotogramma del loop camera
+    // (chiamata ad ogni refresh HUD, fino a ~20 volte al secondo), rendendo la barca a scatti.
+    private val TURN_SEARCH_LOOKAHEAD = 150
+
+    /** Cerca avanti lungo il percorso (al massimo [lookahead] vertici) il prossimo cambio di
+     *  direzione abbastanza marcato da essere una vera svolta (vedi TURN_ANGLE_THRESHOLD_DEG).
+     *  Ritorna l'indice del vertice dove avviene la svolta, o null se non trovata entro il
+     *  raggio di ricerca (percorso dritto, o svolta troppo lontana da mostrare già ora). */
+    private fun findNextTurnIndex(route: List<LatLng>, fromIdx: Int, lookahead: Int): Int? {
+        val limit = minOf(fromIdx + lookahead, route.size - 2)
+        var k = fromIdx
+        while (k < limit) {
+            val b1 = bearingTo(route[k], route[k + 1])
+            val b2 = bearingTo(route[k + 1], route[k + 2])
+            val diff = Math.abs(((b2 - b1 + 540f) % 360f) - 180f)
+            if (diff > TURN_ANGLE_THRESHOLD_DEG) return k + 1
+            k++
+        }
+        return null
     }
+
+    /** Angolo di svolta RELATIVO alla direzione di marcia attuale, arrotondato al multiplo di
+     *  45° più vicino: 0=dritto, 90=destra, 180=indietro (inversione a U), 270=sinistra. */
+    private fun relativeTurnAngleDeg(bearingBefore: Float, bearingAfter: Float): Float {
+        val rel = ((bearingAfter - bearingBefore) % 360f + 360f) % 360f
+        return ((rel + 22.5f) / 45f).toInt() % 8 * 45f
+    }
+
+    private fun formatTurnAngle(deg: Float): String = "%.0f°".format(deg)
 
     // =================================================================
     // LIFECYCLE

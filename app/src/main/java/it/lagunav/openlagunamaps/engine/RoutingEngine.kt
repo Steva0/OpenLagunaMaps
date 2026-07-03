@@ -320,6 +320,13 @@ class RoutingEngine(private val context: Context) {
         return path
     }
 
+    // Se la ricerca a raggio 2 celle (~600m) non trova nulla ma il punto è dentro l'area di
+    // progetto, si allarga la ricerca raddoppiando il raggio fino a questo massimo (celle),
+    // prima di arrendersi. A GRID_CELL_DEG≈0.003° (~300m/cella) sono ~12km: più che sufficiente
+    // a coprire un "buco" di canali dentro la laguna, restando comunque molto più leggero della
+    // forza bruta su tutti gli archi.
+    private val MAX_SNAP_SEARCH_RADIUS_CELLS = 40
+
     /**
      * Snap al canale più vicino usando la griglia spaziale precalcolata.
      * Ricerca nelle celle vicine al punto (raggio ~2 celle) invece di scorrere
@@ -327,22 +334,36 @@ class RoutingEngine(private val context: Context) {
      *
      * Se la griglia NON è caricata affatto (bug di parsing di graph.json), fallback a forza
      * bruta su tutti gli archi — rete di sicurezza per un caso che non dovrebbe capitare.
-     * Se invece la griglia è caricata ma il punto è troppo lontano da qualsiasi arco coperto
-     * (fuori dalla laguna, es. mentre testi da casa/ufficio) NON si fa più fallback a forza
-     * bruta: misurato con PerfMonitor, una scansione di 15k archi costa ~40ms, e se il punto
-     * resta fuori copertura viene ripetuta ad ogni chiamata (fino a 20/s con l'HUD). "Nessun
-     * canale vicino" è comunque la risposta corretta in quel caso — i chiamanti (findRoute,
-     * getMaxSpeedKnotsAt, distanceToNearestCanalMeters) già gestiscono un risultato null.
+     * Se il raggio iniziale non trova nulla ma il punto è dentro l'area di progetto (la laguna),
+     * allarga progressivamente il raggio (vedi MAX_SNAP_SEARCH_RADIUS_CELLS): un punto valido in
+     * laguna ma in una zona con pochi canali vicini non deve risultare "nessun canale trovato"
+     * solo perché il canale più vicino è a più di ~600m. Se invece il punto è fuori dall'area di
+     * progetto (es. stai testando da casa/ufficio) NON si allarga né si fa forza bruta: misurato
+     * con PerfMonitor, una scansione di 15k archi costa ~40ms, e se il punto resta fuori
+     * copertura viene ripetuta ad ogni chiamata (fino a 20/s con l'HUD) — "Nessun canale vicino"
+     * è la risposta corretta in quel caso.
      */
     private fun snapToNearestEdge(p: LatLng): EdgeSnap? {
         val candidateEdgeIndices = mutableSetOf<Int>()
         if (spatialGrid.isNotEmpty()) {
             val rowCenter = ((p.latitude  - gridOriginLat) / gridCellDeg).toInt()
             val colCenter = ((p.longitude - gridOriginLon) / gridCellDeg).toInt()
-            for (dr in -2..2) {
-                for (dc in -2..2) {
-                    val key = (rowCenter + dr).toLong() * 100_000L + (colCenter + dc).toLong()
-                    spatialGrid[key]?.forEach { candidateEdgeIndices.add(it) }
+
+            fun collectWithinRadius(radius: Int) {
+                for (dr in -radius..radius) {
+                    for (dc in -radius..radius) {
+                        val key = (rowCenter + dr).toLong() * 100_000L + (colCenter + dc).toLong()
+                        spatialGrid[key]?.forEach { candidateEdgeIndices.add(it) }
+                    }
+                }
+            }
+
+            collectWithinRadius(2)
+            if (candidateEdgeIndices.isEmpty() && isInsideProject(p)) {
+                var radius = 4
+                while (candidateEdgeIndices.isEmpty() && radius <= MAX_SNAP_SEARCH_RADIUS_CELLS) {
+                    collectWithinRadius(radius)
+                    radius *= 2
                 }
             }
         }

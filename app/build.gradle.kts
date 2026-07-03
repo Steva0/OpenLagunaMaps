@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 39
-        versionName = "1.6-centra-punto-selezionato"
+        versionCode = 49
+        versionName = "1.16-fix-scatti-angolo-numerico"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

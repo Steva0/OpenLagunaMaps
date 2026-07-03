@@ -4,11 +4,23 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- MapFragment embedded con debugMode=true -->
+    <!-- Area di simulazione schermo: il rettangolo esterno rappresenta lo schermo reale del
+         dispositivo; map_container_dev viene ridimensionato a runtime (vedi i due slider
+         larghezza/altezza in Settaggi Dev) come percentuale di quest'area, per vedere come si
+         adatta la UI su schermi più piccoli/grandi senza dover cambiare dispositivo. -->
     <FrameLayout
-        android:id="@+id/map_container_dev"
+        android:id="@+id/layout_screen_sim_area"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:background="#1A1A1A">
+
+        <!-- MapFragment embedded con debugMode=true -->
+        <FrameLayout
+            android:id="@+id/map_container_dev"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center" />
+    </FrameLayout>
 
     <!-- Pannello debug: spostato sotto la barra di ricerca della mappa incorporata, così resta
          cliccabile anche in Dev Tools. -->
@@ -457,6 +469,51 @@
                     android:layout_height="36dp"
                     android:layout_marginTop="4dp"
                     android:text="Reset valori default"
+                    android:textSize="11sp"
+                    app:backgroundTint="#CC333333" />
+
+                <!-- Simula schermi diversi: ridimensiona (in %, non valori fissi) l'area della
+                     mappa incorporata dentro il rettangolo grigio scuro che rappresenta lo
+                     schermo reale, per vedere come si adatta la UI senza cambiare dispositivo. -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Simula dimensione schermo"
+                    android:textColor="@color/white"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_tune_sim_screen_width"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/white"
+                    android:textSize="10sp" />
+                <SeekBar
+                    android:id="@+id/seek_sim_screen_width"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="100" />
+
+                <TextView
+                    android:id="@+id/tv_tune_sim_screen_height"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/white"
+                    android:textSize="10sp" />
+                <SeekBar
+                    android:id="@+id/seek_sim_screen_height"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:max="100" />
+
+                <Button
+                    android:id="@+id/btn_reset_sim_screen"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="4dp"
+                    android:text="Reset dimensione schermo (100%)"
                     android:textSize="11sp"
                     app:backgroundTint="#CC333333" />
             </LinearLayout>

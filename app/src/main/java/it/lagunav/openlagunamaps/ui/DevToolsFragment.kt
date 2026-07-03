@@ -39,6 +39,10 @@ class DevToolsFragment : Fragment() {
     private var simProvider: SimulatedPositionProvider? = null
     private var childMap: MapFragment? = null
 
+    // Simula schermi diversi (in %, non persistito: si resetta ad ogni riavvio dell'app).
+    private var simScreenWidthPct = 100
+    private var simScreenHeightPct = 100
+
     // Modalità "Simula A→B": due punti indipendenti dalla posizione della barca
     private var simAbStart: LatLng? = null
     private var simAbEnd: LatLng? = null
@@ -68,6 +72,7 @@ class DevToolsFragment : Fragment() {
         setupButtons()
         setupCameraSettingsPanel()
         setupPositionSourceToggle()
+        setupScreenSimPanel()
 
         // Il simulatore parte automaticamente: il joystick è sempre visibile in Dev Tools
         startSimulator()
@@ -251,6 +256,56 @@ class DevToolsFragment : Fragment() {
         }
     }
 
+    /** Ridimensiona map_container_dev come percentuale (non valori fissi) dell'area disponibile
+     *  (layout_screen_sim_area, che rappresenta lo schermo reale), per vedere a runtime come si
+     *  adatta la UI a schermi più piccoli/grandi senza dover cambiare dispositivo. */
+    private fun setupScreenSimPanel() {
+        fun refreshLabels() {
+            binding.tvTuneSimScreenWidth.text  = "Larghezza schermo simulata: $simScreenWidthPct%"
+            binding.tvTuneSimScreenHeight.text = "Altezza schermo simulata: $simScreenHeightPct%"
+        }
+
+        fun applySim() {
+            val area = binding.layoutScreenSimArea
+            val w = area.width
+            val h = area.height
+            if (w <= 0 || h <= 0) return  // non ancora disegnata (view non misurata)
+            val params = binding.mapContainerDev.layoutParams
+            params.width  = (w * simScreenWidthPct / 100f).roundToInt()
+            params.height = (h * simScreenHeightPct / 100f).roundToInt()
+            binding.mapContainerDev.layoutParams = params
+        }
+
+        binding.seekSimScreenWidth.progress  = simScreenWidthPct
+        binding.seekSimScreenHeight.progress = simScreenHeightPct
+        refreshLabels()
+
+        binding.seekSimScreenWidth.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                simScreenWidthPct = progress.coerceAtLeast(10)
+                refreshLabels(); applySim()
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        binding.seekSimScreenHeight.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                simScreenHeightPct = progress.coerceAtLeast(10)
+                refreshLabels(); applySim()
+            }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+        binding.btnResetSimScreen.setOnClickListener {
+            simScreenWidthPct = 100; simScreenHeightPct = 100
+            binding.seekSimScreenWidth.progress = 100
+            binding.seekSimScreenHeight.progress = 100
+            refreshLabels(); applySim()
+        }
+    }
+
     // =================================================================
     // BOTTONI SPECIFICI PER MODALITÀ
     // =================================================================
@@ -375,11 +430,7 @@ class DevToolsFragment : Fragment() {
         }
         simProvider = sim
         SimulatorHub.provider = sim
-
-        sim.start { location ->
-            SimulatorHub.notify(location)
-            onSimFix(location)
-        }
+        sim.start(::simOnFix)
 
         binding.joystick.onMove = { normX, normY, magnitude ->
             val provider = simProvider
@@ -403,6 +454,11 @@ class DevToolsFragment : Fragment() {
         SimulatorHub.provider = null
         simProvider = null
         binding.joystick.onMove = null
+    }
+
+    private fun simOnFix(location: Location) {
+        SimulatorHub.notify(location)
+        onSimFix(location)
     }
 
     private fun onSimFix(location: Location) {
@@ -439,8 +495,24 @@ class DevToolsFragment : Fragment() {
 
     override fun onPause() {
         super.onPause()
-        // Teniamo il simulatore attivo via SimulatorHub anche se DevTools è in background
-        // (MapFragment in Mappa lo ascolta via SimulatorHub.addListener)
+        // NB: onPause/onResume di un Fragment scattano solo quando l'Activity va DAVVERO in
+        // background (es. tasto home) — il cambio di voce di menu dentro l'app passa da
+        // FragmentManager.hide()/show(), che non li richiama. Quindi qui possiamo fermare il
+        // tick del simulatore in sicurezza: resta attivo passando da Dev Tools ad altre
+        // schermate dell'app, ma non gira più all'infinito quando l'app è chiusa/in background
+        // (il suo Handler interno non ha altrimenti alcun collegamento al ciclo di vita).
+        simProvider?.stop()
+        // Vedi commento su MapFragment.pauseTracking(): un fragment annidato dentro un fragment
+        // nascosto (childMap qui dentro DevTools) non riceve sempre onPause() in cascata affidabile
+        // su tutti i dispositivi -- meglio fermarlo esplicitamente invece di scoprire un loop
+        // di camera rimasto attivo per sempre in background.
+        childMap?.pauseTracking()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        simProvider?.start(::simOnFix)
+        childMap?.resumeTracking()
     }
 
     /**
