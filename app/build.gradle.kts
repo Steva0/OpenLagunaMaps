@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 62
-        versionName = "1.29-splash-branding-testo"
+        versionCode = 64
+        versionName = "1.31-ricerca-unificata-fix-follow"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

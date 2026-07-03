@@ -196,7 +196,7 @@ class MapFragment : Fragment() {
     private var bgRerouteJob: Job? = null
 
     // Ricerca
-    private var pendingSearchResult: LatLng? = null
+    private var searchDebounceJob: Job? = null
 
     // Layer IDs
     private val SOURCE_GPS        = "gps-position-source"
@@ -939,8 +939,6 @@ class MapFragment : Fragment() {
     /** Imposta la destinazione e calcola il percorso. Esposto per DevToolsFragment. */
     fun setDestinationAndRoute(dest: LatLng) {
         destination = dest
-        pendingSearchResult = null
-        binding.cardSearchResult.visibility = View.GONE
 
         val startPos = lastGpsLocation?.let { LatLng(it.latitude, it.longitude) } ?: return
 
@@ -997,15 +995,18 @@ class MapFragment : Fragment() {
         activeRoute != null ||
         binding.cardPlaceDetail.visibility == View.VISIBLE ||
         binding.cardRoutePlanning.visibility == View.VISIBLE ||
-        binding.cardSavePlace.visibility == View.VISIBLE
+        binding.cardSavePlace.visibility == View.VISIBLE ||
+        binding.cardSavedPlaces.visibility == View.VISIBLE
 
     fun showPlaceDetail(pos: LatLng, name: String) {
         if (isMapInteractionLocked()) return
+        // Altrimenti il loop camera in follow mode ricentra sulla barca 45 volte al secondo,
+        // annullando subito lo spostamento verso il punto selezionato qui sotto — sembrava che
+        // il tap "non facesse nulla" (es. selezionando un risultato di ricerca).
+        setFollowMode(false)
         selectedPlacePos = pos
         selectedPlaceName = name
 
-        pendingSearchResult = null
-        binding.cardSearchResult.visibility = View.GONE
         hidePlacesList()
         binding.cardSearch.visibility = View.GONE
 
@@ -1075,6 +1076,9 @@ class MapFragment : Fragment() {
      *  con "Elimina" visibile (vedi setupMap/tapOnSavedPlace per la ricerca del luogo). */
     private fun editSavedPlace(place: SavedPlace) {
         if (isMapInteractionLocked()) return
+        // Vedi commento in showPlaceDetail(): senza questo il follow mode ricentra sulla barca
+        // ogni fotogramma, annullando lo spostamento verso il luogo selezionato.
+        setFollowMode(false)
         selectedPlacePos = place.toLatLng()
         selectedPlaceName = place.name
         editingPlace = place
@@ -1313,13 +1317,16 @@ class MapFragment : Fragment() {
         val targetIdx = turnIdx ?: minOf(currentWaypointIdx + TURN_SEARCH_LOOKAHEAD, route.size - 1)
         var distNext = haversineLocal(pos, route[currentWaypointIdx])
         for (i in currentWaypointIdx until targetIdx) distNext += haversineLocal(route[i], route[i + 1])
-        val arrow = if (turnIdx != null && turnIdx < route.size - 1) {
+        
+        val arrowRes = if (turnIdx != null && turnIdx < route.size - 1) {
             val bearingBefore = bearingTo(route[turnIdx - 1], route[turnIdx])
             val bearingAfter  = bearingTo(route[turnIdx], route[turnIdx + 1])
-            formatTurnAngle(relativeTurnAngleDeg(bearingBefore, bearingAfter))
+            val angle = relativeTurnAngleDeg(bearingBefore, bearingAfter)
+            getArrowDrawableForAngle(angle)
         } else {
-            "0°"  // Nessuna svolta trovata entro il raggio di ricerca: si prosegue dritti.
+            R.drawable.ic_nav_straight
         }
+        
         val remaining = route.drop(currentWaypointIdx)
         val etaMin    = PerfMonitor.trace("routingEngine.calculateEstimatedTimeMinutes") { routingEngine.calculateEstimatedTimeMinutes(remaining) }
         val distKm    = routingEngine.calculateTotalDistance(remaining) / 1000.0
@@ -1330,13 +1337,13 @@ class MapFragment : Fragment() {
         // Banner in alto: icona svolta + distanza dalla prossima svolta + canale su cui siamo ora.
         if (offCanal) {
             binding.cardNavBanner.setCardBackgroundColor(Color.parseColor("#CC880000"))
-            binding.tvNavArrow.text       = "!"
+            binding.ivNavArrow.setImageResource(R.drawable.ic_nav_straight) // O un'icona di pericolo se preferisci
             binding.tvNavInstruction.text = "Fuori canale"
             binding.tvNavCanal.text       = "%.0f m dal canale più vicino".format(distCanal)
             // Il ricalcolo è gestito dal background job ogni 5 secondi — nessun trigger qui
         } else {
             binding.cardNavBanner.setCardBackgroundColor(Color.parseColor("#00695C"))
-            binding.tvNavArrow.text       = arrow
+            binding.ivNavArrow.setImageResource(arrowRes)
             binding.tvNavInstruction.text = "%.0f m".format(distNext)
             binding.tvNavCanal.text       = canalLocationLabel(pos)
         }
@@ -1374,13 +1381,13 @@ class MapFragment : Fragment() {
     // =================================================================
 
     private fun setupSearch() {
+        // Un'unica lista di risultati in tempo reale (vedi updateLiveSearchResults) — niente
+        // più il vecchio popup a risultato singolo: premere cerca/invio serve solo a chiudere
+        // la tastiera, i risultati sono già lì sotto mentre scrivi.
         binding.etSearch.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) { performSearch(); true } else false
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) { hideKeyboard(); true } else false
         }
-        binding.btnSearch.setOnClickListener { performSearch() }
-        binding.btnNavigateTo.setOnClickListener {
-            pendingSearchResult?.let { showPlaceDetail(it, binding.tvSearchResultName.text.toString()) }
-        }
+        binding.btnSearch.setOnClickListener { hideKeyboard() }
 
         // Lista luoghi (salvati/recenti): visibile quando la barra ha il focus ed è vuota,
         // come la cronologia di Google Maps.
@@ -1391,9 +1398,17 @@ class MapFragment : Fragment() {
             if (activeRoute == null) binding.cvHud.visibility = if (hasFocus) View.GONE else View.VISIBLE
         }
         binding.etSearch.addTextChangedListener { text ->
-            if (text.isNullOrBlank()) { if (binding.etSearch.hasFocus()) showPlacesList() }
-            else hidePlacesList()
+            val q = text?.toString()?.trim().orEmpty()
+            if (q.isBlank()) { if (binding.etSearch.hasFocus()) showPlacesList() }
+            else updateLiveSearchResults(q)
         }
+
+        // Schermata "Luoghi salvati"
+        binding.btnSavedPlacesBack.setOnClickListener { closeSavedPlacesScreen() }
+        binding.btnFilterBerth.setOnClickListener { toggleSavedPlacesFilter(PlaceType.BERTH) }
+        binding.btnFilterFavorite.setOnClickListener { toggleSavedPlacesFilter(PlaceType.FAVORITE) }
+        binding.btnFilterSpecial.setOnClickListener { toggleSavedPlacesFilter(PlaceType.TO_VISIT) }
+        binding.btnFilterGeneric.setOnClickListener { toggleSavedPlacesFilter(PlaceType.GENERIC) }
 
         // Popup selezione luogo
         binding.btnPlaceDetailClose.setOnClickListener { closePlaceDetail() }
@@ -1452,26 +1467,71 @@ class MapFragment : Fragment() {
     // LISTA LUOGHI — salvati (ancora/preferito/speciale/generico) + recenti
     // =================================================================
 
+    /** Menu di ricerca a campo vuoto: un solo pulsante "Salvati" (apre la schermata a tutto
+     *  schermo con l'elenco completo filtrabile) + i luoghi delle navigazioni DAVVERO avviate
+     *  di recente (PlacesStore.getRecents, valorizzato solo in startPlannedRoute — non le
+     *  semplici ricerche). Niente più elenco dei singoli luoghi salvati qui in mezzo. */
     private fun showPlacesList() {
+        val ctx = requireContext()
+        searchDebounceJob?.cancel()
+        val container = binding.layoutPlacesList
+        container.removeAllViews()
+
+        val savedCount = PlacesStore.getSaved(ctx).size
+        val savedSubtitle = if (savedCount > 0) "$savedCount luoghi" else "Nessun luogo salvato ancora"
+        addPlaceRow(container, "🔖 Salvati", savedSubtitle) { openSavedPlacesScreen() }
+
+        val recents = PlacesStore.getRecents(ctx)
+        if (recents.isNotEmpty()) {
+            container.addView(TextView(ctx).apply {
+                text = "Recenti"
+                textSize = 11f
+                setTextColor(Color.LTGRAY)
+                setPadding(32, 20, 32, 4)
+            })
+            recents.forEach { rec -> addPlaceRow(container, rec.name, "Recente") { selectPlace(rec) } }
+        }
+        binding.cardPlaces.visibility = View.VISIBLE
+    }
+
+    /** Ricerca in tempo reale mentre si scrive: al massimo 2 luoghi salvati che corrispondono
+     *  per nome, poi tutti i risultati "nuovi" (Nominatim, con debounce — vedi sotto). Se nessun
+     *  salvato corrisponde non se ne mostra nessuno (niente ripiego su altro). */
+    private fun updateLiveSearchResults(query: String) {
         val ctx = requireContext()
         val container = binding.layoutPlacesList
         container.removeAllViews()
-        var any = false
 
         PlacesStore.getSaved(ctx)
-            .sortedBy { it.type.ordinal }
+            .filter { it.name.contains(query, ignoreCase = true) }
+            .take(2)
             .forEach { place ->
                 addPlaceRow(container, "${place.type.icon} ${place.name}", place.type.label) { selectPlace(place) }
-                any = true
             }
-        PlacesStore.getRecents(ctx).forEach { rec ->
-            addPlaceRow(container, rec.name, "Recente") { selectPlace(rec) }
-            any = true
+        binding.cardPlaces.visibility = View.VISIBLE
+
+        // Debounce: Nominatim non va interrogato ad ogni tasto premuto (violerebbe le sue linee
+        // guida d'uso e rischierebbe di far bloccare le richieste dell'app) — aspettiamo che
+        // l'utente smetta di scrivere per un attimo prima di partire con la richiesta di rete.
+        searchDebounceJob?.cancel()
+        if (query.length < 3) return
+        searchDebounceJob = viewLifecycleOwner.lifecycleScope.launch {
+            delay(450L)
+            val results = withContext(Dispatchers.IO) { searchNominatimMulti(query) }
+            if (_binding == null) return@launch
+            if (binding.etSearch.text?.toString()?.trim() != query) return@launch  // testo cambiato nel frattempo
+            results.forEach { (pos, name) ->
+                addPlaceRow(container, name, "Nuovo luogo") {
+                    hideKeyboard()
+                    hidePlacesList()
+                    showPlaceDetail(pos, name)
+                }
+            }
         }
-        binding.cardPlaces.visibility = if (any) View.VISIBLE else View.GONE
     }
 
     private fun hidePlacesList() {
+        searchDebounceJob?.cancel()
         _binding?.cardPlaces?.visibility = View.GONE
     }
 
@@ -1481,7 +1541,66 @@ class MapFragment : Fragment() {
         editSavedPlace(place)
     }
 
-    private fun addPlaceRow(container: LinearLayout, title: String, subtitle: String, onClick: () -> Unit) {
+    // --- Schermata a tutto schermo "Luoghi salvati" ---
+
+    private val savedPlacesTypeFilter = PlaceType.values().toMutableSet()
+
+    private fun openSavedPlacesScreen() {
+        hidePlacesList()
+        hideKeyboard()
+        binding.cardSearch.visibility = View.GONE
+        updateSavedPlacesFilterButtons()
+        refreshSavedPlacesScreenList()
+        binding.cardSavedPlaces.visibility = View.VISIBLE
+    }
+
+    private fun closeSavedPlacesScreen() {
+        binding.cardSavedPlaces.visibility = View.GONE
+        binding.cardSearch.visibility = View.VISIBLE
+    }
+
+    private fun refreshSavedPlacesScreenList() {
+        val container = binding.layoutSavedPlacesFullList
+        container.removeAllViews()
+        PlacesStore.getSaved(requireContext())
+            .filter { it.type in savedPlacesTypeFilter }
+            .sortedBy { it.type.ordinal }
+            .forEach { place ->
+                addPlaceRow(
+                    container, "${place.type.icon} ${place.name}", place.type.label,
+                    titleColor = Color.parseColor("#222222"), subtitleColor = Color.parseColor("#888888")
+                ) {
+                    closeSavedPlacesScreen()
+                    editSavedPlace(place)
+                }
+            }
+    }
+
+    private fun toggleSavedPlacesFilter(type: PlaceType) {
+        if (!savedPlacesTypeFilter.remove(type)) savedPlacesTypeFilter.add(type)
+        updateSavedPlacesFilterButtons()
+        refreshSavedPlacesScreenList()
+    }
+
+    private fun updateSavedPlacesFilterButtons() {
+        val selectedTint = android.content.res.ColorStateList.valueOf(Color.parseColor("#0091EA"))
+        val normalTint    = android.content.res.ColorStateList.valueOf(Color.parseColor("#F5F5F5"))
+        mapOf(
+            PlaceType.BERTH to binding.btnFilterBerth,
+            PlaceType.FAVORITE to binding.btnFilterFavorite,
+            PlaceType.TO_VISIT to binding.btnFilterSpecial,
+            PlaceType.GENERIC to binding.btnFilterGeneric
+        ).forEach { (type, btn) ->
+            val active = type in savedPlacesTypeFilter
+            btn.backgroundTintList = if (active) selectedTint else normalTint
+        }
+    }
+
+    private fun addPlaceRow(
+        container: LinearLayout, title: String, subtitle: String,
+        titleColor: Int = Color.WHITE, subtitleColor: Int = Color.LTGRAY,
+        onClick: () -> Unit
+    ) {
         val ctx = requireContext()
         val outValue = TypedValue()
         ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
@@ -1493,43 +1612,27 @@ class MapFragment : Fragment() {
             setBackgroundResource(outValue.resourceId)
             setOnClickListener { onClick() }
         }
-        row.addView(TextView(ctx).apply { text = title; textSize = 14f; setTextColor(Color.WHITE) })
-        row.addView(TextView(ctx).apply { text = subtitle; textSize = 11f; setTextColor(Color.LTGRAY) })
+        row.addView(TextView(ctx).apply { text = title; textSize = 14f; setTextColor(titleColor) })
+        row.addView(TextView(ctx).apply { text = subtitle; textSize = 11f; setTextColor(subtitleColor) })
         container.addView(row)
     }
 
-    private fun performSearch() {
-        val query = binding.etSearch.text.toString().trim()
-        if (query.isEmpty()) return
-        (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-            .hideSoftInputFromWindow(binding.root.windowToken, 0)
-
-        lifecycleScope.launch {
-            val result = withContext(Dispatchers.IO) { searchNominatim(query) } ?: return@launch
-            pendingSearchResult = result.first
-            binding.tvSearchResultName.text = result.second
-            binding.cardSearchResult.visibility = View.VISIBLE
-            mapLibre?.animateCamera(
-                CameraUpdateFactory.newCameraPosition(
-                    CameraPosition.Builder().target(result.first).zoom(14.0).build()
-                ), 1000
-            )
-        }
-    }
-
-    private suspend fun searchNominatim(query: String): Pair<LatLng, String>? {
+    /** Ricerca "nuovi posti" (OpenStreetMap/Nominatim) per la lista di ricerca in tempo reale
+     *  (vedi updateLiveSearchResults). */
+    private suspend fun searchNominatimMulti(query: String): List<Pair<LatLng, String>> {
         return try {
             val enc  = java.net.URLEncoder.encode(query, "UTF-8")
-            val url  = "https://nominatim.openstreetmap.org/search?format=json&q=$enc&bounded=1&viewbox=11.7,45.65,12.85,45.05&limit=1"
+            val url  = "https://nominatim.openstreetmap.org/search?format=json&q=$enc&bounded=1&viewbox=11.7,45.65,12.85,45.05&limit=5"
             val conn = URL(url).openConnection()
             conn.setRequestProperty("User-Agent", "LagunaNav/1.0")
             conn.connectTimeout = 5000; conn.readTimeout = 5000
-            val arr  = JSONArray(conn.getInputStream().bufferedReader().readText())
-            if (arr.length() == 0) return null
-            val obj  = arr.getJSONObject(0)
-            val name = obj.getString("display_name").split(",").take(2).joinToString(", ")
-            Pair(LatLng(obj.getDouble("lat"), obj.getDouble("lon")), name)
-        } catch (_: Exception) { null }
+            val arr = JSONArray(conn.getInputStream().bufferedReader().readText())
+            (0 until arr.length()).map { i ->
+                val obj  = arr.getJSONObject(i)
+                val name = obj.getString("display_name").split(",").take(2).joinToString(", ")
+                LatLng(obj.getDouble("lat"), obj.getDouble("lon")) to name
+            }
+        } catch (_: Exception) { emptyList() }
     }
 
     // =================================================================
@@ -1804,6 +1907,19 @@ class MapFragment : Fragment() {
     }
 
     private fun formatTurnAngle(deg: Float): String = "%.0f°".format(deg)
+
+    private fun getArrowDrawableForAngle(deg: Float): Int {
+        return when (deg) {
+            45f -> R.drawable.ic_nav_slight_right
+            90f -> R.drawable.ic_nav_turn_right
+            135f -> R.drawable.ic_nav_sharp_right
+            180f -> R.drawable.ic_nav_uturn_right
+            225f -> R.drawable.ic_nav_sharp_left
+            270f -> R.drawable.ic_nav_turn_left
+            315f -> R.drawable.ic_nav_slight_left
+            else -> R.drawable.ic_nav_straight
+        }
+    }
 
     // =================================================================
     // LIFECYCLE
