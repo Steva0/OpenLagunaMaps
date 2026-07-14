@@ -44,7 +44,7 @@ object UiTuning {
     const val DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION = 0.7f
     // Colore delle briccole, regolabile da Dev Tools > Colori Mappa.
     val DEFAULT_BRICCOLE_COLOR: Int       = android.graphics.Color.parseColor("#003366")
-    const val DEFAULT_COMPASS_SCALE       = 1.0f
+    const val DEFAULT_COMPASS_SCALE       = 0.6f
 
     // Tachimetro e altimetro sono specchiati (stessa dimensione/posizione, solo lato opposto):
     // un solo slider per ciascuno basta per entrambi.
