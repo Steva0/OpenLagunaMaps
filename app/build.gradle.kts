@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 93
-        versionName = "1.60-bussola-grande-nord-centrato"
+        versionCode = 94
+        versionName = "1.61-fix-tap-bussola-slider-scala"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

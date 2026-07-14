@@ -157,6 +157,7 @@ class DevToolsFragment : Fragment() {
             binding.tvTuneRecenterIdealZoom.text = "Centra: zoom ideale (x): %.1f — più alto = più vicino".format(CameraTuning.recenterIdealZoom)
             binding.tvTuneRecenterSnapBelowZoom.text = "Centra: sotto questo zoom riavvicina (y): %.1f".format(CameraTuning.recenterSnapBelowZoom)
             binding.tvTuneGaugeScale.text      = "Scala tachimetro/altimetro: %.2fx".format(UiTuning.gaugeScale)
+            binding.tvTuneCompassScale.text    = "Scala bussola: %.2fx".format(UiTuning.compassScale)
             binding.tvTuneGaugeOffset.text     = "Posizione tachimetro/altimetro: %.0f dp".format(UiTuning.gaugeOffsetYDp)
             binding.tvTuneGaugeStackOffset.text = "Distanza altimetro sopra il tachimetro: %.0f dp".format(UiTuning.gaugeStackOffsetDp)
             binding.tvTuneSavedPlaceScale.text = "Scala luoghi salvati: %.2fx".format(UiTuning.savedPlaceScale)
@@ -193,6 +194,7 @@ class DevToolsFragment : Fragment() {
             binding.seekRecenterSnapBelowZoom.progress = ((CameraTuning.recenterSnapBelowZoom - CameraTuning.RECENTER_ZOOM_MIN) * 10)
                 .roundToInt().coerceIn(0, 80)
             binding.seekGaugeScale.progress      = (UiTuning.gaugeScale * 100).roundToInt().coerceIn(50, 200)
+            binding.seekCompassScale.progress   = (UiTuning.compassScale * 100).roundToInt().coerceIn(50, 200)
             binding.seekGaugeOffset.progress     = (UiTuning.gaugeOffsetYDp + 100).roundToInt().coerceIn(0, 150)
             binding.seekGaugeStackOffset.progress = UiTuning.gaugeStackOffsetDp.roundToInt().coerceIn(0, 300)
             binding.seekSavedPlaceScale.progress   = (UiTuning.savedPlaceScale * 100).roundToInt().coerceIn(10, 300)
@@ -248,6 +250,7 @@ class DevToolsFragment : Fragment() {
         onChange(binding.seekRecenterSnapBelowZoom) { CameraTuning.recenterSnapBelowZoom = CameraTuning.RECENTER_ZOOM_MIN + it / 10.0 }
 
         onChangeUi(binding.seekGaugeScale)      { UiTuning.gaugeScale = it / 100f }
+        onChangeUi(binding.seekCompassScale)    { UiTuning.compassScale = it.coerceAtLeast(10) / 100f }
         onChangeUi(binding.seekGaugeOffset)     { UiTuning.gaugeOffsetYDp = (it - 100).toFloat() }
         onChangeUi(binding.seekGaugeStackOffset) { UiTuning.gaugeStackOffsetDp = it.toFloat() }
         onChangeUi(binding.seekSavedPlaceScale)  { UiTuning.savedPlaceScale = it.coerceAtLeast(10) / 100f }

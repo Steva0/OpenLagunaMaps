@@ -294,6 +294,8 @@ class MapFragment : Fragment() {
      */
     fun applyUiTuning() {
         val density = resources.displayMetrics.density
+        binding.cardCompass.scaleX = UiTuning.compassScale
+        binding.cardCompass.scaleY = UiTuning.compassScale
         binding.speedometer.scaleX = UiTuning.gaugeScale
         binding.speedometer.scaleY = UiTuning.gaugeScale
         binding.speedometer.translationY = UiTuning.gaugeOffsetYDp * density
@@ -1782,21 +1784,23 @@ class MapFragment : Fragment() {
             setFollowMode(true)
         }
 
-        // Bussola custom: se sei in modalità Segui, resta centrata sulla barca e riporta solo
-        // il bearing a nord (senza uscire dal follow mode); altrimenti (camera libera) resetta
-        // solo il nord senza spostare il centro attuale.
+        // Bussola custom: se sei in modalità Segui, il loop camera (~45Hz) ruota continuamente
+        // la mappa per allinearla alla prua della barca — provare a "vincere" quella rotazione
+        // frame per frame (lasciando followMode attivo) produceva uno snap che si annullava da
+        // solo al fotogramma successivo, sembrando che il tap non facesse nulla. Si stacca quindi
+        // il follow mode (la barca resta comunque al centro, semplicemente la camera smette di
+        // ruotare da sola) e si riporta il nord in su. Se invece la camera era già libera, si
+        // resetta solo il nord senza spostare il centro attuale (comportamento pre-esistente).
         binding.cardCompass.setOnClickListener {
             if (followMode) {
-                // smoothedCamBearing è lo stato che il loop camera continua a leggere ad ogni
-                // frame: va aggiornato anche lui, altrimenti il prossimo fotogramma annullerebbe
-                // subito lo snap a nord tornando verso il vecchio valore.
-                smoothedCamBearing = 0.0
-                val map = mapLibre
                 val lastFix = fixBuffer.lastOrNull()
+                val map = mapLibre
+                setFollowMode(false)
                 if (map != null && lastFix != null) {
-                    val target = followCameraTarget(map, LatLng(lastFix.lat, lastFix.lon))
                     map.animateCamera(CameraUpdateFactory.newCameraPosition(
-                        CameraPosition.Builder().target(target).bearing(0.0).zoom(map.cameraPosition.zoom).build()
+                        CameraPosition.Builder()
+                            .target(LatLng(lastFix.lat, lastFix.lon))
+                            .bearing(0.0).zoom(map.cameraPosition.zoom).build()
                     ), 400)
                 }
             } else {

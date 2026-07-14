@@ -22,6 +22,7 @@ object UiTuning {
     private const val KEY_DELETE_PLACE_BTN_SCALE = "ui_delete_place_btn_scale"
     private const val KEY_FOLLOW_BOAT_SCREEN_Y   = "ui_follow_boat_screen_y_fraction"
     private const val KEY_BRICCOLE_COLOR         = "ui_briccole_color"
+    private const val KEY_COMPASS_SCALE          = "ui_compass_scale"
 
     const val DEFAULT_GAUGE_SCALE         = 0.72f  // tachimetro/altimetro un po' più piccoli
     const val DEFAULT_GAUGE_OFFSET_Y      = -78f   // e un po' più in alto (negativo = su)
@@ -43,6 +44,7 @@ object UiTuning {
     const val DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION = 0.7f
     // Colore delle briccole, regolabile da Dev Tools > Colori Mappa.
     val DEFAULT_BRICCOLE_COLOR: Int       = android.graphics.Color.parseColor("#003366")
+    const val DEFAULT_COMPASS_SCALE       = 1.0f
 
     // Tachimetro e altimetro sono specchiati (stessa dimensione/posizione, solo lato opposto):
     // un solo slider per ciascuno basta per entrambi.
@@ -61,6 +63,7 @@ object UiTuning {
     var deletePlaceBtnScale: Float = DEFAULT_DELETE_PLACE_BTN_SCALE
     var followBoatScreenYFraction: Float = DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION
     var briccoleColor: Int = DEFAULT_BRICCOLE_COLOR
+    var compassScale: Float = DEFAULT_COMPASS_SCALE
 
     private var loaded = false
 
@@ -82,6 +85,7 @@ object UiTuning {
         deletePlaceBtnScale = p.getFloat(KEY_DELETE_PLACE_BTN_SCALE, deletePlaceBtnScale)
         followBoatScreenYFraction = p.getFloat(KEY_FOLLOW_BOAT_SCREEN_Y, followBoatScreenYFraction)
         briccoleColor = p.getInt(KEY_BRICCOLE_COLOR, briccoleColor)
+        compassScale = p.getFloat(KEY_COMPASS_SCALE, compassScale)
     }
 
     fun save(context: Context) {
@@ -100,6 +104,7 @@ object UiTuning {
             putFloat(KEY_DELETE_PLACE_BTN_SCALE, deletePlaceBtnScale)
             putFloat(KEY_FOLLOW_BOAT_SCREEN_Y, followBoatScreenYFraction)
             putInt(KEY_BRICCOLE_COLOR, briccoleColor)
+            putFloat(KEY_COMPASS_SCALE, compassScale)
             apply()
         }
     }
@@ -119,6 +124,7 @@ object UiTuning {
         deletePlaceBtnScale = DEFAULT_DELETE_PLACE_BTN_SCALE
         followBoatScreenYFraction = DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION
         briccoleColor = DEFAULT_BRICCOLE_COLOR
+        compassScale = DEFAULT_COMPASS_SCALE
         save(context)
     }
 }
