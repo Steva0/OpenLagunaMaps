@@ -21,10 +21,6 @@ object UiTuning {
     private const val KEY_SAVE_PLACE_TEXT_SCALE = "ui_save_place_text_scale"
     private const val KEY_DELETE_PLACE_BTN_SCALE = "ui_delete_place_btn_scale"
     private const val KEY_FOLLOW_BOAT_SCREEN_Y   = "ui_follow_boat_screen_y_fraction"
-    private const val KEY_CHANNEL_MAX_WIDTH_M    = "ui_channel_max_width_m"
-    private const val KEY_CHANNEL_MIN_WIDTH_M    = "ui_channel_min_width_m"
-    private const val KEY_CHANNEL_FILL_COLOR     = "ui_channel_fill_color"
-    private const val KEY_CHANNEL_FILL_OPACITY   = "ui_channel_fill_opacity"
     private const val KEY_BRICCOLE_COLOR         = "ui_briccole_color"
 
     const val DEFAULT_GAUGE_SCALE         = 0.72f  // tachimetro/altimetro un po' più piccoli
@@ -45,19 +41,7 @@ object UiTuning {
     // non il centro esatto (0.5) — lascia più mappa visibile davanti alla direzione di marcia
     // rispetto a quella alle spalle. Valore confermato dall'utente come corretto.
     const val DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION = 0.7f
-    // Larghezza massima "a nastro" dei canali in mappa (vedi ChannelWidthEngine): il canale si
-    // allarga fino a questo valore SOLO dove i dati di batimetria confermano acqua reale.
-    const val DEFAULT_CHANNEL_MAX_WIDTH_M = 18f
-    // Larghezza minima per lato, sempre garantita anche dove la batimetria non dà spazio (0):
-    // senza questo, i tratti senza dati collassavano a linea invisibile invece che a un canale
-    // sottile ma visibile.
-    const val DEFAULT_CHANNEL_MIN_WIDTH_M = 2.5f
-    // Colore/trasparenza dei canali e delle briccole, regolabili da Dev Tools > Colori Mappa.
-    // NB trasparenza: dove più canali si toccano/incrociano i poligoni si sovrappongono, quindi
-    // con opacità <1 l'alpha si somma proprio lì (effetto "evidenziatore" più scuro/saturo) — è
-    // un limite noto del rendering a poligoni separati, non un bug dello slider in sé.
-    val DEFAULT_CHANNEL_FILL_COLOR: Int   = android.graphics.Color.parseColor("#1976D2")
-    const val DEFAULT_CHANNEL_FILL_OPACITY = 0.6f
+    // Colore delle briccole, regolabile da Dev Tools > Colori Mappa.
     val DEFAULT_BRICCOLE_COLOR: Int       = android.graphics.Color.parseColor("#003366")
 
     // Tachimetro e altimetro sono specchiati (stessa dimensione/posizione, solo lato opposto):
@@ -76,10 +60,6 @@ object UiTuning {
     var savePlaceTextScale: Float  = DEFAULT_SAVE_PLACE_TEXT_SCALE
     var deletePlaceBtnScale: Float = DEFAULT_DELETE_PLACE_BTN_SCALE
     var followBoatScreenYFraction: Float = DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION
-    var channelMaxWidthM: Float = DEFAULT_CHANNEL_MAX_WIDTH_M
-    var channelMinWidthM: Float = DEFAULT_CHANNEL_MIN_WIDTH_M
-    var channelFillColor: Int = DEFAULT_CHANNEL_FILL_COLOR
-    var channelFillOpacity: Float = DEFAULT_CHANNEL_FILL_OPACITY
     var briccoleColor: Int = DEFAULT_BRICCOLE_COLOR
 
     private var loaded = false
@@ -101,10 +81,6 @@ object UiTuning {
         savePlaceTextScale = p.getFloat(KEY_SAVE_PLACE_TEXT_SCALE, savePlaceTextScale)
         deletePlaceBtnScale = p.getFloat(KEY_DELETE_PLACE_BTN_SCALE, deletePlaceBtnScale)
         followBoatScreenYFraction = p.getFloat(KEY_FOLLOW_BOAT_SCREEN_Y, followBoatScreenYFraction)
-        channelMaxWidthM = p.getFloat(KEY_CHANNEL_MAX_WIDTH_M, channelMaxWidthM)
-        channelMinWidthM = p.getFloat(KEY_CHANNEL_MIN_WIDTH_M, channelMinWidthM)
-        channelFillColor = p.getInt(KEY_CHANNEL_FILL_COLOR, channelFillColor)
-        channelFillOpacity = p.getFloat(KEY_CHANNEL_FILL_OPACITY, channelFillOpacity)
         briccoleColor = p.getInt(KEY_BRICCOLE_COLOR, briccoleColor)
     }
 
@@ -123,10 +99,6 @@ object UiTuning {
             putFloat(KEY_SAVE_PLACE_TEXT_SCALE, savePlaceTextScale)
             putFloat(KEY_DELETE_PLACE_BTN_SCALE, deletePlaceBtnScale)
             putFloat(KEY_FOLLOW_BOAT_SCREEN_Y, followBoatScreenYFraction)
-            putFloat(KEY_CHANNEL_MAX_WIDTH_M, channelMaxWidthM)
-            putFloat(KEY_CHANNEL_MIN_WIDTH_M, channelMinWidthM)
-            putInt(KEY_CHANNEL_FILL_COLOR, channelFillColor)
-            putFloat(KEY_CHANNEL_FILL_OPACITY, channelFillOpacity)
             putInt(KEY_BRICCOLE_COLOR, briccoleColor)
             apply()
         }
@@ -146,10 +118,6 @@ object UiTuning {
         savePlaceTextScale = DEFAULT_SAVE_PLACE_TEXT_SCALE
         deletePlaceBtnScale = DEFAULT_DELETE_PLACE_BTN_SCALE
         followBoatScreenYFraction = DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION
-        channelMaxWidthM = DEFAULT_CHANNEL_MAX_WIDTH_M
-        channelMinWidthM = DEFAULT_CHANNEL_MIN_WIDTH_M
-        channelFillColor = DEFAULT_CHANNEL_FILL_COLOR
-        channelFillOpacity = DEFAULT_CHANNEL_FILL_OPACITY
         briccoleColor = DEFAULT_BRICCOLE_COLOR
         save(context)
     }

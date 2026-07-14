@@ -41,7 +41,6 @@ import it.lagunav.openlagunamaps.R
 import it.lagunav.openlagunamaps.databinding.FragmentMapBinding
 import it.lagunav.openlagunamaps.engine.BathymetryEngine
 import it.lagunav.openlagunamaps.engine.CameraTuning
-import it.lagunav.openlagunamaps.engine.ChannelWidthEngine
 import it.lagunav.openlagunamaps.engine.GnssPositionProvider
 import it.lagunav.openlagunamaps.engine.PerfMonitor
 import it.lagunav.openlagunamaps.engine.PlaceType
@@ -67,7 +66,6 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.CircleLayer
-import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.*
@@ -209,8 +207,6 @@ class MapFragment : Fragment() {
     private val LAYER_PREVIEW  = "preview-route-layer"
     private val SOURCE_OFFLINE_BOUNDARY = "offline-boundary-source"
     private val LAYER_OFFLINE_BOUNDARY  = "offline-boundary-layer"
-    private val SOURCE_CHANNELS = "canali-larghi-source"
-    private val LAYER_CHANNELS  = "canali-larghi-layer"
 
     // Buffer dei fix GPS reali (posizione + istante). Nessun sensore esterno: solo posizione.
     private data class Fix(val t: Long, val lat: Double, val lon: Double)
@@ -334,10 +330,6 @@ class MapFragment : Fragment() {
                 (style.getLayer("$LAYER_SAVED_PLACES-${type.name}") as? SymbolLayer)
                     ?.setProperties(iconSize(UiTuning.savedPlaceScale))
             }
-            (style.getSource(SOURCE_CHANNELS) as? GeoJsonSource)
-                ?.setGeoJson(ChannelWidthEngine.buildRibbonPolygons(UiTuning.channelMaxWidthM, UiTuning.channelMinWidthM))
-            (style.getLayer(LAYER_CHANNELS) as? FillLayer)
-                ?.setProperties(fillColor(UiTuning.channelFillColor), fillOpacity(UiTuning.channelFillOpacity))
             (style.getLayer("briccole-layer") as? CircleLayer)
                 ?.setProperties(circleColor(UiTuning.briccoleColor))
         }
@@ -637,20 +629,12 @@ class MapFragment : Fragment() {
             val buf     = requireContext().assets.open("laguna_vettoriale.json").readBytes()
             val geoJson = String(buf, Charset.forName("UTF-8"))
             style.addSource(GeoJsonSource("laguna-source", geoJson))
-
-            // Canali: poligono "a nastro" a larghezza variabile (ChannelWidthEngine), non più
-            // semplici linee sottili. La larghezza reale disponibile per lato è precalcolata
-            // dalla pipeline Python campionando la batimetria; qui si applica solo il cap
-            // corrente (UiTuning.channelMaxWidthM, regolabile da Dev Tools).
-            ChannelWidthEngine.load(requireContext())
-            style.addSource(GeoJsonSource(SOURCE_CHANNELS, ChannelWidthEngine.buildRibbonPolygons(UiTuning.channelMaxWidthM, UiTuning.channelMinWidthM)))
-            // Colore/opacità regolabili da Dev Tools > Colori Mappa (UiTuning). Nota: con
-            // opacità <1 i punti dove più canali si toccano/incrociano mostrano un effetto
-            // "evidenziatore" più scuro/saturo (i poligoni sovrapposti sommano l'alpha) — limite
-            // noto del rendering a poligoni separati, non un bug dello slider.
-            style.addLayer(FillLayer(LAYER_CHANNELS, SOURCE_CHANNELS)
-                .withProperties(fillColor(UiTuning.channelFillColor), fillOpacity(UiTuning.channelFillOpacity)))
-
+            style.addLayer(LineLayer("canals-casing", "laguna-source")
+                .withFilter(eq(get("type"), literal("canal")))
+                .withProperties(lineColor(resources.getColor(R.color.white, null)), lineWidth(6f), lineOpacity(0.4f)))
+            style.addLayer(LineLayer("canals-layer", "laguna-source")
+                .withFilter(eq(get("type"), literal("canal")))
+                .withProperties(lineColor(resources.getColor(R.color.marine_blue, null)), lineWidth(3.5f)))
             style.addLayer(LineLayer("rocks-layer", "laguna-source")
                 .withFilter(eq(get("type"), literal("rock")))
                 .withProperties(lineColor(Color.parseColor("#8B4513")), lineWidth(4f)))

@@ -502,34 +502,7 @@
                     android:layout_height="wrap_content"
                     android:max="80" />
 
-                <!-- Larghezza massima "a nastro" dei canali (ChannelWidthEngine): il canale si
-                     allarga fino a questo valore SOLO dove la batimetria conferma acqua reale. -->
-                <TextView
-                    android:id="@+id/tv_tune_channel_max_width"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-                <SeekBar
-                    android:id="@+id/seek_channel_max_width"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:max="40" />
-
-                <TextView
-                    android:id="@+id/tv_tune_channel_min_width"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-                <SeekBar
-                    android:id="@+id/seek_channel_min_width"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:max="20" />
-
-                <!-- Colori Mappa: opacità canali + tavolozze colore per canali e briccole -->
+                <!-- Colori Mappa: tavolozza colore briccole -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -540,36 +513,9 @@
                     android:textStyle="bold" />
 
                 <TextView
-                    android:id="@+id/tv_tune_channel_opacity"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-                <SeekBar
-                    android:id="@+id/seek_channel_opacity"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:max="100" />
-
-                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Colore canali"
-                    android:textColor="@color/white"
-                    android:textSize="10sp" />
-                <LinearLayout
-                    android:id="@+id/layout_channel_color_swatches"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:orientation="horizontal" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
                     android:text="Colore briccole"
                     android:textColor="@color/white"
                     android:textSize="10sp" />
