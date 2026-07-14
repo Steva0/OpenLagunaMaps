@@ -336,6 +336,10 @@ class MapFragment : Fragment() {
             }
             (style.getSource(SOURCE_CHANNELS) as? GeoJsonSource)
                 ?.setGeoJson(ChannelWidthEngine.buildRibbonPolygons(UiTuning.channelMaxWidthM, UiTuning.channelMinWidthM))
+            (style.getLayer(LAYER_CHANNELS) as? FillLayer)
+                ?.setProperties(fillColor(UiTuning.channelFillColor), fillOpacity(UiTuning.channelFillOpacity))
+            (style.getLayer("briccole-layer") as? CircleLayer)
+                ?.setProperties(circleColor(UiTuning.briccoleColor))
         }
     }
 
@@ -640,11 +644,12 @@ class MapFragment : Fragment() {
             // corrente (UiTuning.channelMaxWidthM, regolabile da Dev Tools).
             ChannelWidthEngine.load(requireContext())
             style.addSource(GeoJsonSource(SOURCE_CHANNELS, ChannelWidthEngine.buildRibbonPolygons(UiTuning.channelMaxWidthM, UiTuning.channelMinWidthM)))
-            // Opacità piena (non semi-trasparente): dove più canali si toccano/incrociano, i
-            // poligoni si sovrappongono e con un'opacità <1 l'alpha si somma agli incroci,
-            // dando un fastidioso "effetto evidenziatore" più scuro/saturo proprio lì.
+            // Colore/opacità regolabili da Dev Tools > Colori Mappa (UiTuning). Nota: con
+            // opacità <1 i punti dove più canali si toccano/incrociano mostrano un effetto
+            // "evidenziatore" più scuro/saturo (i poligoni sovrapposti sommano l'alpha) — limite
+            // noto del rendering a poligoni separati, non un bug dello slider.
             style.addLayer(FillLayer(LAYER_CHANNELS, SOURCE_CHANNELS)
-                .withProperties(fillColor(Color.parseColor("#FF00FF")), fillOpacity(1f)))
+                .withProperties(fillColor(UiTuning.channelFillColor), fillOpacity(UiTuning.channelFillOpacity)))
 
             style.addLayer(LineLayer("rocks-layer", "laguna-source")
                 .withFilter(eq(get("type"), literal("rock")))
@@ -655,7 +660,7 @@ class MapFragment : Fragment() {
             val briccole = CircleLayer("briccole-layer", "laguna-source")
                 .withFilter(eq(get("type"), literal("briccola")))
                 .withProperties(
-                    circleColor(resources.getColor(R.color.marine_blue_dark, null)),
+                    circleColor(UiTuning.briccoleColor),
                     circleRadius(3.5f), circleStrokeColor(resources.getColor(R.color.white, null)), circleStrokeWidth(1f)
                 )
             briccole.minZoom = 13f

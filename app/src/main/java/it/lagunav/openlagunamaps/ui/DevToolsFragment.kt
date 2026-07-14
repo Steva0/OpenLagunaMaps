@@ -79,6 +79,7 @@ class DevToolsFragment : Fragment() {
         setupPositionSourceToggle()
         setupScreenSimPanel()
         setupOfflineMapPanel()
+        setupMapColorsPanel()
 
         // Il simulatore parte automaticamente: il joystick è sempre visibile in Dev Tools
         startSimulator()
@@ -157,6 +158,7 @@ class DevToolsFragment : Fragment() {
             binding.tvTuneRecenterSnapBelowZoom.text = "Centra: sotto questo zoom riavvicina (y): %.1f".format(CameraTuning.recenterSnapBelowZoom)
             binding.tvTuneChannelMaxWidth.text = "Larghezza massima canali: %.1f m".format(UiTuning.channelMaxWidthM)
             binding.tvTuneChannelMinWidth.text = "Larghezza minima canali: %.2f m".format(UiTuning.channelMinWidthM)
+            binding.tvTuneChannelOpacity.text = "Opacità canali: %.0f%%".format(UiTuning.channelFillOpacity * 100)
             binding.tvTuneGaugeScale.text      = "Scala tachimetro/altimetro: %.2fx".format(UiTuning.gaugeScale)
             binding.tvTuneGaugeOffset.text     = "Posizione tachimetro/altimetro: %.0f dp".format(UiTuning.gaugeOffsetYDp)
             binding.tvTuneGaugeStackOffset.text = "Distanza altimetro sopra il tachimetro: %.0f dp".format(UiTuning.gaugeStackOffsetDp)
@@ -195,6 +197,7 @@ class DevToolsFragment : Fragment() {
                 .roundToInt().coerceIn(0, 80)
             binding.seekChannelMaxWidth.progress = (UiTuning.channelMaxWidthM * 2).roundToInt().coerceIn(0, 40)
             binding.seekChannelMinWidth.progress = (UiTuning.channelMinWidthM * 4).roundToInt().coerceIn(0, 20)
+            binding.seekChannelOpacity.progress = (UiTuning.channelFillOpacity * 100).roundToInt().coerceIn(0, 100)
             binding.seekGaugeScale.progress      = (UiTuning.gaugeScale * 100).roundToInt().coerceIn(50, 200)
             binding.seekGaugeOffset.progress     = (UiTuning.gaugeOffsetYDp + 100).roundToInt().coerceIn(0, 150)
             binding.seekGaugeStackOffset.progress = UiTuning.gaugeStackOffsetDp.roundToInt().coerceIn(0, 300)
@@ -265,6 +268,7 @@ class DevToolsFragment : Fragment() {
         onChangeUi(binding.seekFollowBoatScreenY) { UiTuning.followBoatScreenYFraction = it / 100f }
         onChangeUi(binding.seekChannelMaxWidth) { UiTuning.channelMaxWidthM = it / 2f }
         onChangeUi(binding.seekChannelMinWidth) { UiTuning.channelMinWidthM = it / 4f }
+        onChangeUi(binding.seekChannelOpacity) { UiTuning.channelFillOpacity = it / 100f }
 
         binding.switchHudSpeedLinked.setOnCheckedChangeListener { _, isChecked ->
             CameraTuning.hudRefreshLinkedToSpeed = isChecked
@@ -328,6 +332,46 @@ class DevToolsFragment : Fragment() {
             binding.seekSimScreenWidth.progress = 100
             binding.seekSimScreenHeight.progress = 100
             refreshLabels(); applySim()
+        }
+    }
+
+    // =================================================================
+    // COLORI MAPPA — tavolozze rapide per canali e briccole + opacità
+    // =================================================================
+
+    private val CHANNEL_COLOR_PRESETS = listOf(
+        "#FF00FF", "#1976D2", "#00BCD4", "#009688", "#FFFFFF", "#000000"
+    )
+    private val BRICCOLE_COLOR_PRESETS = listOf(
+        "#003366", "#CC0000", "#FF9800", "#FFFFFF", "#000000", "#FFEB3B"
+    )
+
+    private fun setupMapColorsPanel() {
+        addColorSwatches(binding.layoutChannelColorSwatches, CHANNEL_COLOR_PRESETS) { color ->
+            UiTuning.channelFillColor = color
+            UiTuning.save(requireContext())
+            childMap?.applyUiTuning()
+        }
+        addColorSwatches(binding.layoutBriccoleColorSwatches, BRICCOLE_COLOR_PRESETS) { color ->
+            UiTuning.briccoleColor = color
+            UiTuning.save(requireContext())
+            childMap?.applyUiTuning()
+        }
+    }
+
+    private fun addColorSwatches(container: android.widget.LinearLayout, hexColors: List<String>, onPick: (Int) -> Unit) {
+        container.removeAllViews()
+        val sizeDp = (28 * resources.displayMetrics.density).toInt()
+        val marginDp = (6 * resources.displayMetrics.density).toInt()
+        hexColors.forEach { hex ->
+            val color = android.graphics.Color.parseColor(hex)
+            val swatch = View(requireContext())
+            val params = android.widget.LinearLayout.LayoutParams(sizeDp, sizeDp)
+            params.marginEnd = marginDp
+            swatch.layoutParams = params
+            swatch.setBackgroundColor(color)
+            swatch.setOnClickListener { onPick(color) }
+            container.addView(swatch)
         }
     }
 

@@ -23,6 +23,9 @@ object UiTuning {
     private const val KEY_FOLLOW_BOAT_SCREEN_Y   = "ui_follow_boat_screen_y_fraction"
     private const val KEY_CHANNEL_MAX_WIDTH_M    = "ui_channel_max_width_m"
     private const val KEY_CHANNEL_MIN_WIDTH_M    = "ui_channel_min_width_m"
+    private const val KEY_CHANNEL_FILL_COLOR     = "ui_channel_fill_color"
+    private const val KEY_CHANNEL_FILL_OPACITY   = "ui_channel_fill_opacity"
+    private const val KEY_BRICCOLE_COLOR         = "ui_briccole_color"
 
     const val DEFAULT_GAUGE_SCALE         = 0.72f  // tachimetro/altimetro un po' più piccoli
     const val DEFAULT_GAUGE_OFFSET_Y      = -78f   // e un po' più in alto (negativo = su)
@@ -49,6 +52,13 @@ object UiTuning {
     // senza questo, i tratti senza dati collassavano a linea invisibile invece che a un canale
     // sottile ma visibile.
     const val DEFAULT_CHANNEL_MIN_WIDTH_M = 2.5f
+    // Colore/trasparenza dei canali e delle briccole, regolabili da Dev Tools > Colori Mappa.
+    // NB trasparenza: dove più canali si toccano/incrociano i poligoni si sovrappongono, quindi
+    // con opacità <1 l'alpha si somma proprio lì (effetto "evidenziatore" più scuro/saturo) — è
+    // un limite noto del rendering a poligoni separati, non un bug dello slider in sé.
+    val DEFAULT_CHANNEL_FILL_COLOR: Int   = android.graphics.Color.parseColor("#FF00FF")
+    const val DEFAULT_CHANNEL_FILL_OPACITY = 1f
+    val DEFAULT_BRICCOLE_COLOR: Int       = android.graphics.Color.parseColor("#003366")
 
     // Tachimetro e altimetro sono specchiati (stessa dimensione/posizione, solo lato opposto):
     // un solo slider per ciascuno basta per entrambi.
@@ -68,6 +78,9 @@ object UiTuning {
     var followBoatScreenYFraction: Float = DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION
     var channelMaxWidthM: Float = DEFAULT_CHANNEL_MAX_WIDTH_M
     var channelMinWidthM: Float = DEFAULT_CHANNEL_MIN_WIDTH_M
+    var channelFillColor: Int = DEFAULT_CHANNEL_FILL_COLOR
+    var channelFillOpacity: Float = DEFAULT_CHANNEL_FILL_OPACITY
+    var briccoleColor: Int = DEFAULT_BRICCOLE_COLOR
 
     private var loaded = false
 
@@ -90,6 +103,9 @@ object UiTuning {
         followBoatScreenYFraction = p.getFloat(KEY_FOLLOW_BOAT_SCREEN_Y, followBoatScreenYFraction)
         channelMaxWidthM = p.getFloat(KEY_CHANNEL_MAX_WIDTH_M, channelMaxWidthM)
         channelMinWidthM = p.getFloat(KEY_CHANNEL_MIN_WIDTH_M, channelMinWidthM)
+        channelFillColor = p.getInt(KEY_CHANNEL_FILL_COLOR, channelFillColor)
+        channelFillOpacity = p.getFloat(KEY_CHANNEL_FILL_OPACITY, channelFillOpacity)
+        briccoleColor = p.getInt(KEY_BRICCOLE_COLOR, briccoleColor)
     }
 
     fun save(context: Context) {
@@ -109,6 +125,9 @@ object UiTuning {
             putFloat(KEY_FOLLOW_BOAT_SCREEN_Y, followBoatScreenYFraction)
             putFloat(KEY_CHANNEL_MAX_WIDTH_M, channelMaxWidthM)
             putFloat(KEY_CHANNEL_MIN_WIDTH_M, channelMinWidthM)
+            putInt(KEY_CHANNEL_FILL_COLOR, channelFillColor)
+            putFloat(KEY_CHANNEL_FILL_OPACITY, channelFillOpacity)
+            putInt(KEY_BRICCOLE_COLOR, briccoleColor)
             apply()
         }
     }
@@ -129,6 +148,9 @@ object UiTuning {
         followBoatScreenYFraction = DEFAULT_FOLLOW_BOAT_SCREEN_Y_FRACTION
         channelMaxWidthM = DEFAULT_CHANNEL_MAX_WIDTH_M
         channelMinWidthM = DEFAULT_CHANNEL_MIN_WIDTH_M
+        channelFillColor = DEFAULT_CHANNEL_FILL_COLOR
+        channelFillOpacity = DEFAULT_CHANNEL_FILL_OPACITY
+        briccoleColor = DEFAULT_BRICCOLE_COLOR
         save(context)
     }
 }

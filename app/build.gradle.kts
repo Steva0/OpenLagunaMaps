@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 87
-        versionName = "1.54-fix-effetto-evidenziatore-incroci"
+        versionCode = 88
+        versionName = "1.55-devtools-colori-mappa"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
