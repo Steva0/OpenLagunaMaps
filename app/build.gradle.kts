@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 86
-        versionName = "1.53-canali-larghezza-minima"
+        versionCode = 87
+        versionName = "1.54-fix-effetto-evidenziatore-incroci"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -48,7 +48,7 @@ object UiTuning {
     // Larghezza minima per lato, sempre garantita anche dove la batimetria non dà spazio (0):
     // senza questo, i tratti senza dati collassavano a linea invisibile invece che a un canale
     // sottile ma visibile.
-    const val DEFAULT_CHANNEL_MIN_WIDTH_M = 1.5f
+    const val DEFAULT_CHANNEL_MIN_WIDTH_M = 2.5f
 
     // Tachimetro e altimetro sono specchiati (stessa dimensione/posizione, solo lato opposto):
     // un solo slider per ciascuno basta per entrambi.
