@@ -38,7 +38,7 @@ object CameraTuning {
     // livello "singolo edificio".
     const val RECENTER_ZOOM_MIN     = 10.0
     const val RECENTER_ZOOM_MAX     = 18.0
-    const val DEFAULT_RECENTER_ZOOM = 13.0
+    const val DEFAULT_RECENTER_ZOOM = 17.0
 
     var renderDelayMs: Long          = DEFAULT_RENDER_DELAY_MS
     var minBearingDisplacementM: Double = DEFAULT_MIN_BEARING_DISP_M

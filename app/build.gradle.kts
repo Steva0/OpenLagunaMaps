@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 99
-        versionName = "1.66-fix-centra-scatto-istantaneo"
+        versionCode = 100
+        versionName = "1.67-default-distanza-centra-17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
