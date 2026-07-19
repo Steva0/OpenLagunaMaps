@@ -91,9 +91,6 @@ private const val KEY_MOB_PINS          = "mob_pins"
 // chiesto" da "negato con 'Non chiedere più'" (in quel caso il sistema non mostra più il
 // dialog, va indirizzato alle impostazioni dell'app invece di rilanciare la richiesta).
 private const val KEY_ASKED_LOCATION_PERMISSION = "asked_location_permission"
-// Non privato: serve anche a DevToolsFragment per definire la regione da scaricare offline
-// con lo stesso identico stile usato dalla mappa (l'offline pack è specifico per styleURL).
-const val STYLE_DAY                     = "https://tiles.openfreemap.org/styles/liberty"
 private const val BOAT_ICON_ID          = "boat-nav-icon"
 private const val OFF_CANAL_THRESHOLD_M  = 30.0
 private const val SAVED_PLACE_TAP_RADIUS_DP = 28f  // tap entro questa distanza (in pixel schermo) da un pallino -> lo apre
@@ -146,40 +143,6 @@ class MapFragment : Fragment() {
         }
     }
 
-    /** Disegna (o rimuove, passando null) il rettangolo del confine della regione offline
-     *  scaricata — a zoom basso i tile coprono aree enormi (l'intera area visibile può
-     *  ricadere dentro tile che intersecano il bbox richiesto, anche se molto più grande della
-     *  laguna), quindi lo sfondo nero da solo non basta a capire cosa è stato davvero incluso:
-     *  questo contorno mostra il bbox esatto usato per il download, indipendentemente dallo zoom. */
-    fun showOfflineRegionBoundary(bounds: Pair<LatLng, LatLng>?) {
-        val geoJson = if (bounds != null) {
-            val (sw, ne) = bounds
-            val ring = listOf(
-                sw, LatLng(sw.latitude, ne.longitude), ne, LatLng(ne.latitude, sw.longitude), sw
-            )
-            val coords = JsonArray().also { arr -> ring.forEach { p -> arr.add(JsonArray().apply { add(p.longitude); add(p.latitude) }) } }
-            val feat = JsonObject().apply {
-                addProperty("type", "Feature"); add("properties", JsonObject())
-                add("geometry", JsonObject().apply { addProperty("type", "LineString"); add("coordinates", coords) })
-            }
-            JsonObject().apply { addProperty("type", "FeatureCollection"); add("features", JsonArray().apply { add(feat) }) }.toString()
-        } else emptyFc()
-
-        mapLibre?.getStyle { style ->
-            val existing = style.getSource(SOURCE_OFFLINE_BOUNDARY) as? GeoJsonSource
-            if (existing != null) {
-                existing.setGeoJson(geoJson)
-            } else {
-                style.addSource(GeoJsonSource(SOURCE_OFFLINE_BOUNDARY, geoJson))
-                style.addLayer(LineLayer(LAYER_OFFLINE_BOUNDARY, SOURCE_OFFLINE_BOUNDARY).withProperties(
-                    lineColor("#FF00FF"),
-                    lineWidth(3f),
-                    lineOpacity(0.9f)
-                ))
-            }
-        }
-    }
-
     /** Ultima posizione GPS/sim ricevuta — accessibile da DevToolsFragment. */
     var lastGpsLocation: Location? = null
         private set
@@ -212,8 +175,6 @@ class MapFragment : Fragment() {
     private var gnssProvider: PositionProvider? = null
     private val SOURCE_PREVIEW = "preview-route-source"
     private val LAYER_PREVIEW  = "preview-route-layer"
-    private val SOURCE_OFFLINE_BOUNDARY = "offline-boundary-source"
-    private val LAYER_OFFLINE_BOUNDARY  = "offline-boundary-layer"
 
     // Buffer dei fix GPS reali (posizione + istante). Nessun sensore esterno: solo posizione.
     private data class Fix(val t: Long, val lat: Double, val lon: Double)
@@ -399,59 +360,12 @@ class MapFragment : Fragment() {
     // MAPPA
     // =================================================================
 
-    // Diagnostica temporanea per il bug "pacchetto offline non usato al primo avvio offline":
-    // stampa tutto quello che potrebbe spiegare perché lo stile non si carica da cache quando
-    // manca la connessione, invece di continuare a indovinare a scatola chiusa.
-    private fun logOfflineDebugState(momento: String) {
-        val ctx = context ?: return
-        try {
-            val dbFile = java.io.File(ctx.filesDir, "mbgl-offline.db")
-            Log.d(
-                "OfflineDebug",
-                "[$momento] mbgl-offline.db exists=${dbFile.exists()} size=${if (dbFile.exists()) dbFile.length() else -1} path=${dbFile.absolutePath}"
-            )
-        } catch (e: Exception) {
-            Log.e("OfflineDebug", "[$momento] errore leggendo mbgl-offline.db", e)
-        }
-        try {
-            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            val net = cm.activeNetwork
-            val caps = net?.let { cm.getNetworkCapabilities(it) }
-            val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            val validated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-            Log.d("OfflineDebug", "[$momento] rete: activeNetwork=$net hasInternet=$hasInternet validated=$validated")
-        } catch (e: Exception) {
-            Log.e("OfflineDebug", "[$momento] errore leggendo stato rete", e)
-        }
-        try {
-            org.maplibre.android.offline.OfflineManager.getInstance(ctx).listOfflineRegions(
-                object : org.maplibre.android.offline.OfflineManager.ListOfflineRegionsCallback {
-                    override fun onList(offlineRegions: Array<org.maplibre.android.offline.OfflineRegion>?) {
-                        Log.d("OfflineDebug", "[$momento] OfflineManager vede ${offlineRegions?.size ?: 0} regioni")
-                        offlineRegions?.forEachIndexed { i, region ->
-                            region.getStatus(object : org.maplibre.android.offline.OfflineRegion.OfflineRegionStatusCallback {
-                                override fun onStatus(status: org.maplibre.android.offline.OfflineRegionStatus?) {
-                                    Log.d(
-                                        "OfflineDebug",
-                                        "[$momento] regione #$i: completa=${status?.isComplete} " +
-                                            "completedResourceCount=${status?.completedResourceCount} " +
-                                            "requiredResourceCount=${status?.requiredResourceCount} " +
-                                            "completedResourceSize=${status?.completedResourceSize}"
-                                    )
-                                }
-                                override fun onError(error: String?) {
-                                    Log.e("OfflineDebug", "[$momento] regione #$i: errore status: $error")
-                                }
-                            })
-                        }
-                    }
-                    override fun onError(error: String) {
-                        Log.e("OfflineDebug", "[$momento] errore listOfflineRegions: $error")
-                    }
-                }
-            )
-        } catch (e: Exception) {
-            Log.e("OfflineDebug", "[$momento] errore chiamando listOfflineRegions", e)
+    // Diagnostica: conferma che il server locale della mappa offline sia su e che lo style
+    // JSON puntato sia quello con le route locali sostituite correttamente.
+    private fun logOfflineDebugState(momento: String, styleJson: String? = null) {
+        Log.d("OfflineDebug", "[$momento] LocalTileServer.port=${it.lagunav.openlagunamaps.engine.LocalTileServer.port}")
+        if (styleJson != null) {
+            Log.d("OfflineDebug", "[$momento] style contiene 127.0.0.1? ${styleJson.contains("127.0.0.1")}, contiene __PORT__ residuo? ${styleJson.contains("__PORT__")}")
         }
     }
 
@@ -473,9 +387,17 @@ class MapFragment : Fragment() {
                 Log.e("OfflineDebug", "Caricamento mappa/stile fallito: $errorMessage")
                 logOfflineDebugState("dopo fallimento setStyle")
             }
-            logOfflineDebugState("prima di setStyle")
 
-            map.setStyle(Style.Builder().fromUri(STYLE_DAY)) { style ->
+            // Lo stile punta a source/sprite/glifi serviti dal server locale (LocalTileServer,
+            // avviato in MainActivity prima che questo fragment venga creato): stessa identica
+            // fonte dati online e offline, niente più dipendenza dal meccanismo di cache interno
+            // di MapLibre.
+            val styleJson = requireContext().assets.open("style_liberty_offline.json")
+                .bufferedReader().use { it.readText() }
+                .replace("__PORT__", it.lagunav.openlagunamaps.engine.LocalTileServer.port.toString())
+            logOfflineDebugState("prima di setStyle", styleJson)
+
+            map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
                 Log.d("OfflineDebug", "setStyle: callback di successo invocata, stile caricato")
                 mapStyle = style
                 setupAllLayers(style)
@@ -969,29 +891,6 @@ class MapFragment : Fragment() {
      *  invece di scoprire un loop di camera "fantasma" rimasto attivo per sempre. Idempotente
      *  (vedi startCameraLoop/startGnss), quindi sicuro da richiamare anche se la cascata
      *  normale ha già fatto il suo lavoro. */
-    /** Modalità di verifica per Dev Tools > Mappa Offline: forza MapLibre a non scaricare
-     *  nulla via rete (org.maplibre.android.MapLibre.setConnected(false), lo stesso meccanismo
-     *  usato da Mapbox/MapLibre per i test offline) — niente colori artificiali aggiunti, si
-     *  vede semplicemente la mappa così com'è nella cache, senza poter scaricare altro online.
-     *
-     *  Ricarica anche lo stile da zero: senza questo, i tile già decodificati in memoria in
-     *  questa sessione (indipendenti dalla cache su disco) restano a schermo comunque, rendendo
-     *  il test inutile — sembra che "non cambi niente" anche quando la rete è davvero disattivata.
-     *
-     *  Il loop camera (~45Hz) tocca lo stile corrente ad ogni fotogramma (icona barca, ecc.):
-     *  se lasciato girare durante il reload, arriva a chiamare metodi sullo Style vecchio proprio
-     *  mentre MapLibre lo sta invalidando, e crasha. Va fermato prima e riavviato solo a
-     *  caricamento completato (setupAllLayers finito). */
-    fun setOfflineVerificationMode(enabled: Boolean) {
-        org.maplibre.android.MapLibre.setConnected(if (enabled) false else null)
-        stopCameraLoop()
-        mapLibre?.setStyle(Style.Builder().fromUri(STYLE_DAY)) { style ->
-            mapStyle = style
-            setupAllLayers(style)
-            startCameraLoop()
-        }
-    }
-
     fun pauseTracking() {
         stopPositionTracking()
         stopCameraLoop()

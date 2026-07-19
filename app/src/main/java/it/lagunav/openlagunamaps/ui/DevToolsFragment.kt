@@ -47,12 +47,7 @@ class DevToolsFragment : Fragment() {
     private var simAbStart: LatLng? = null
     private var simAbEnd: LatLng? = null
 
-    // Bbox dell'ultima regione offline scaricata (laguna + margine): il contorno va ridisegnato
-    // ogni volta che si ricarica lo stile (setOfflineVerificationMode), perché un reload crea un
-    // nuovo Style e la sorgente/layer del contorno aggiunti a quello vecchio non esistono più.
-    private var lastOfflineBounds: Pair<LatLng, LatLng>? = null
-
-    override fun onCreateView(
+override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View {
         _binding = FragmentDevtoolsBinding.inflate(inflater, container, false)
@@ -367,137 +362,18 @@ class DevToolsFragment : Fragment() {
     // MAPPA OFFLINE — scarica il pacchetto (laguna + 35 km) e verifica la cache
     // =================================================================
 
-    /** Legge quanti pacchetti offline sono già presenti e, per ciascuno, lo stato REALE letto
-     *  dal database (non dall'observer della sessione di download, che si perde se si cambia
-     *  schermata) — così si può controllare in ogni momento se un download è davvero in corso o
-     *  fermo, senza doverlo indovinare dal fatto che la mappa sembri nera o meno. */
-    private fun refreshOfflineRegionsStatus() {
-        org.maplibre.android.offline.OfflineManager.getInstance(requireContext()).listOfflineRegions(
-            object : org.maplibre.android.offline.OfflineManager.ListOfflineRegionsCallback {
-                override fun onList(offlineRegions: Array<org.maplibre.android.offline.OfflineRegion>?) {
-                    if (_binding == null) return
-                    val regions = offlineRegions ?: emptyArray()
-                    if (regions.isEmpty()) {
-                        binding.tvOfflineStatus.text = "Nessun pacchetto offline scaricato"
-                        return
-                    }
-                    binding.tvOfflineStatus.text = "Pacchetti offline: ${regions.size} — lettura stato..."
-                    regions.forEachIndexed { i, region ->
-                        region.getStatus(object : org.maplibre.android.offline.OfflineRegion.OfflineRegionStatusCallback {
-                            override fun onStatus(status: org.maplibre.android.offline.OfflineRegionStatus?) {
-                                if (_binding == null || status == null) return
-                                val sizeMb = status.completedResourceSize / 1_000_000.0
-                                val done = status.requiredResourceCount > 0 && status.completedResourceCount >= status.requiredResourceCount
-                                binding.tvOfflineStatus.text = "Pacchetto ${i + 1}/${regions.size}: " +
-                                        (if (done) "COMPLETO" else "in corso") +
-                                        " — ${status.completedResourceCount}/${status.requiredResourceCount} risorse, %.1f MB".format(sizeMb)
-                            }
-                            override fun onError(error: String?) {
-                                if (_binding == null) return
-                                binding.tvOfflineStatus.text = "Errore lettura stato pacchetto ${i + 1}: $error"
-                            }
-                        })
-                    }
-                }
-                override fun onError(error: String) {
-                    if (_binding == null) return
-                    binding.tvOfflineStatus.text = "Errore lettura pacchetti: $error"
-                }
-            }
-        )
-    }
-
+    /** La mappa offline (tile vettoriali/raster, glifi, sprite — vedi genera_tiles_offline.py)
+     *  è ora sempre bundlata nell'APK e servita da LocalTileServer: non c'è più nulla da
+     *  scaricare a runtime, questa è solo una lettura di stato dei file installati. */
     private fun setupOfflineMapPanel() {
-        refreshOfflineRegionsStatus()
-        binding.btnRefreshOfflineStatus.setOnClickListener { refreshOfflineRegionsStatus() }
-
-        binding.btnDownloadOfflineRegion.setOnClickListener {
-            // Se prima era stato attivato lo switch "Solo cache offline" qui sotto,
-            // MapLibre.setConnected(false) blocca anche il download di un nuovo pacchetto
-            // (passa dalla stessa rete della libreria) — lo riattiviamo sempre esplicitamente
-            // prima di scaricare, indipendentemente da come è rimasto lo switch.
-            org.maplibre.android.MapLibre.setConnected(null)
-            if (binding.switchOfflineOnlyCache.isChecked) binding.switchOfflineOnlyCache.isChecked = false
-
-            val engine = childMap?.routingEngine
-            val bounds = engine?.getProjectBoundsWithMargin(35_000.0)
-            if (bounds == null) {
-                binding.tvOfflineStatus.text = "Perimetro di progetto non ancora caricato, riprova tra poco"
-                return@setOnClickListener
-            }
-            lastOfflineBounds = bounds
-            childMap?.showOfflineRegionBoundary(bounds)
-
-            val (sw, ne) = bounds
-            val latLngBounds = org.maplibre.android.geometry.LatLngBounds.Builder().include(sw).include(ne).build()
-            // minZoom 9 (non 0): a zoom molto basso un tile copre centinaia di km, quindi
-            // scaricando da zoom 0 si trascina dentro anche zone lontanissime dal bbox richiesto
-            // (visto testando: Innsbruck, Trieste, Bologna, Firenze comparivano scaricate insieme
-            // alla laguna). Da zoom 9 in su i tile sono abbastanza piccoli da restare vicini al
-            // bbox reale; in barca comunque non serve mai vedere l'intera Europa da zoom 0-8.
-            val definition = org.maplibre.android.offline.OfflineTilePyramidRegionDefinition(
-                STYLE_DAY, latLngBounds, 9.0, 16.0, resources.displayMetrics.density
-            )
-            binding.tvOfflineStatus.text = "Avvio download regione offline..."
-
-            org.maplibre.android.offline.OfflineManager.getInstance(requireContext()).createOfflineRegion(
-                definition, ByteArray(0),
-                object : org.maplibre.android.offline.OfflineManager.CreateOfflineRegionCallback {
-                    override fun onCreate(offlineRegion: org.maplibre.android.offline.OfflineRegion) {
-                        offlineRegion.setObserver(object : org.maplibre.android.offline.OfflineRegion.OfflineRegionObserver {
-                            override fun onStatusChanged(status: org.maplibre.android.offline.OfflineRegionStatus) {
-                                if (_binding == null) return
-                                val done = status.completedResourceCount >= status.requiredResourceCount && status.requiredResourceCount > 0
-                                val sizeMb = status.completedResourceSize / 1_000_000.0
-                                binding.tvOfflineStatus.text = if (done)
-                                    "Download completato: ${status.completedResourceCount} risorse, %.1f MB".format(sizeMb)
-                                else
-                                    "Download in corso: ${status.completedResourceCount}/${status.requiredResourceCount} — %.1f MB".format(sizeMb)
-                            }
-                            override fun onError(error: org.maplibre.android.offline.OfflineRegionError) {
-                                if (_binding == null) return
-                                binding.tvOfflineStatus.text = "Errore download: ${error.message}"
-                            }
-                            override fun mapboxTileCountLimitExceeded(limit: Long) {
-                                if (_binding == null) return
-                                binding.tvOfflineStatus.text = "Limite di ${limit} tile superato: riduci l'area o lo zoom massimo"
-                            }
-                        })
-                        offlineRegion.setDownloadState(org.maplibre.android.offline.OfflineRegion.STATE_ACTIVE)
-                    }
-                    override fun onError(error: String) {
-                        if (_binding == null) return
-                        binding.tvOfflineStatus.text = "Errore creazione regione: $error"
-                    }
-                }
-            )
+        val ctx = requireContext()
+        val sizes = it.lagunav.openlagunamaps.engine.LocalAssetInstaller.DB_ASSETS.joinToString(", ") { (name, _) ->
+            val f = java.io.File(ctx.filesDir, name)
+            val mb = if (f.exists()) f.length() / 1_000_000.0 else -1.0
+            "$name: %.1f MB".format(mb)
         }
-
-        binding.switchOfflineOnlyCache.setOnCheckedChangeListener { _, isChecked ->
-            // Sfondo nero + rete disattivata a livello SDK (MapLibre.setConnected(false)): non
-            // serve più la modalità aereo, le zone senza tile in cache restano semplicemente nere.
-            childMap?.setOfflineVerificationMode(isChecked)
-            childMap?.showOfflineRegionBoundary(lastOfflineBounds)
-
-            if (!isChecked) {
-                binding.tvOfflineStatus.text = "Cache locale di nuovo attiva (navigando si ricaricano i tile come al solito)"
-                return@setOnCheckedChangeListener
-            }
-            // Pulisce SOLO la cache "ambiente" (i tile scaricati navigando sul dispositivo): i
-            // pacchetti offline scaricati esplicitamente sopra non vengono toccati.
-            org.maplibre.android.offline.OfflineManager.getInstance(requireContext()).clearAmbientCache(
-                object : org.maplibre.android.offline.OfflineManager.FileSourceCallback {
-                    override fun onSuccess() {
-                        if (_binding == null) return
-                        binding.tvOfflineStatus.text = "Cache locale pulita e rete disattivata — vedi solo il pacchetto offline (nero = non scaricato)."
-                    }
-                    override fun onError(message: String) {
-                        if (_binding == null) return
-                        binding.tvOfflineStatus.text = "Errore pulizia cache: $message"
-                    }
-                }
-            )
-        }
+        val port = it.lagunav.openlagunamaps.engine.LocalTileServer.port
+        binding.tvOfflineStatus.text = "Mappa locale (server su porta $port): $sizes"
     }
 
     // =================================================================

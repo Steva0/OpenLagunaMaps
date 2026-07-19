@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 112
-        versionName = "1.79-debug-pacchetto-offline"
+        versionCode = 113
+        versionName = "1.80-mappa-offline-tile-server-locale"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,13 +36,13 @@ android {
         buildConfig = true
     }
 
-    // Il database della mappa offline precotta (mbgl-offline.db, ~150MB) va bundlato SENZA
-    // compressione: Android/AAPT ha bug noti nel leggere via AssetManager asset compressi molto
-    // grandi (oltre gli ~100MB), che possono fallire in modo silenzioso invece di dare un errore
-    // chiaro — probabile causa per cui il pacchetto offline non risultava mai davvero copiato/
-    // utilizzabile al primo avvio.
+    // I database della mappa offline precotta (tile vettoriali/raster, glifi — vedi
+    // genera_tiles_offline.py) vanno bundlati SENZA compressione: devono restare SQLite validi
+    // apribili direttamente dopo la copia in filesDir, e asset grandi compressi hanno bug noti
+    // di lettura silenziosamente troncata via AssetManager.
     androidResources {
         noCompress += "db"
+        noCompress += "mbtiles"
     }
 }
 
@@ -62,6 +62,10 @@ dependencies {
 
     // MapLibre Native
     implementation("org.maplibre.gl:android-sdk:11.11.0")
+
+    // Server HTTP locale per servire la mappa offline precotta (tile/sprite/glifi) da
+    // 127.0.0.1, sostituendo il meccanismo di cache offline nativo di MapLibre
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
     
     // Serialization (per caricare il grafo JSON)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")

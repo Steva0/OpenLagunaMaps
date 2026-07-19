@@ -20,7 +20,8 @@ import android.net.Uri
 import it.lagunav.openlagunamaps.ui.AboutFragment
 import it.lagunav.openlagunamaps.ui.DonateFragment
 import it.lagunav.openlagunamaps.ui.DevToolsFragment
-import it.lagunav.openlagunamaps.engine.OfflinePackInstaller
+import it.lagunav.openlagunamaps.engine.LocalAssetInstaller
+import it.lagunav.openlagunamaps.engine.LocalTileServer
 
 class MainActivity : AppCompatActivity() {
 
@@ -156,9 +157,10 @@ class MainActivity : AppCompatActivity() {
         // del pacchetto offline precotto (se non già presente): MapLibre apre/crea il proprio
         // database non appena la prima MapView viene istanziata, quindi la copia deve avvenire
         // prima, non dopo.
-        android.util.Log.d("OfflineDebug", "MainActivity.onCreate: avvio OfflinePackInstaller.installIfNeeded")
-        OfflinePackInstaller.installIfNeeded(applicationContext) {
-            android.util.Log.d("OfflineDebug", "OfflinePackInstaller: onDone, creo MapFragment")
+        android.util.Log.d("OfflineDebug", "MainActivity.onCreate: avvio LocalAssetInstaller.installIfNeeded")
+        LocalAssetInstaller.installIfNeeded(applicationContext) {
+            LocalTileServer.startIfNeeded(applicationContext)
+            android.util.Log.d("OfflineDebug", "LocalAssetInstaller: onDone, server locale su porta ${LocalTileServer.port}, creo MapFragment")
             showFragment(R.id.nav_map, "Mappa") { MapFragment() }
             binding.navView.setCheckedItem(R.id.nav_map)
         }
