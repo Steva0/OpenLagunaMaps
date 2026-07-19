@@ -1594,7 +1594,7 @@ class MapFragment : Fragment() {
 
         val savedCount = PlacesStore.getSaved(ctx).size
         val savedSubtitle = if (savedCount > 0) "$savedCount luoghi" else "Nessun luogo salvato ancora"
-        addPlaceRow(container, "🔖 Salvati", savedSubtitle) { openSavedPlacesScreen() }
+        addPlaceRow(container, "Salvati", savedSubtitle) { openSavedPlacesScreen() }
 
         val recents = PlacesStore.getRecents(ctx)
         if (recents.isNotEmpty()) {

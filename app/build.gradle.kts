@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 104
-        versionName = "1.71-ricerca-stile-chiaro-e-offline"
+        versionCode = 105
+        versionName = "1.72-rimossa-emoji-salvati"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
