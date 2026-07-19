@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 101
-        versionName = "1.68-mappa-offline-precotta-nel-pacchetto"
+        versionCode = 102
+        versionName = "1.69-pulsante-menu-volante"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

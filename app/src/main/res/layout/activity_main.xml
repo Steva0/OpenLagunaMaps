@@ -11,6 +11,31 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Pulsante menu "volante": visibile solo nelle schermate che non hanno già un loro
+         pulsante menu incorporato (es. la barra di ricerca in Mappa) -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/card_fab_menu"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="24dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="#CC003366"
+        app:cardCornerRadius="24dp"
+        app:cardElevation="6dp">
+
+        <ImageButton
+            android:id="@+id/btn_fab_menu"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/open_menu"
+            android:padding="12dp"
+            android:src="@drawable/ic_hamburger"
+            app:tint="@color/white" />
+    </androidx.cardview.widget.CardView>
+
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/nav_view"
         android:layout_width="wrap_content"
