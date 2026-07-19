@@ -26,6 +26,10 @@ class DonateFragment : Fragment() {
             }
         }
 
+        root.findViewById<View>(R.id.btn_menu)?.setOnClickListener {
+            (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
+        }
+
         return root
     }
 }

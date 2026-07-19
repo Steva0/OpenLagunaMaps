@@ -53,6 +53,10 @@ class WeatherFragment : Fragment() {
         loadWeather()
         loadTide()
         loadDailyForecast()
+
+        binding.btnMenu.setOnClickListener {
+            (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
+        }
     }
 
     // =================================================================

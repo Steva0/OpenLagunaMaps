@@ -25,6 +25,7 @@
     <!-- Pannello debug: spostato sotto la barra di ricerca della mappa incorporata, così resta
          cliccabile anche in Dev Tools. -->
     <androidx.cardview.widget.CardView
+        android:id="@+id/card_debug_panel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
@@ -537,7 +538,8 @@
 
                 <!-- Simula schermi diversi: ridimensiona (in %, non valori fissi) l'area della
                      mappa incorporata dentro il rettangolo grigio scuro che rappresenta lo
-                     schermo reale, per vedere come si adatta la UI senza cambiare dispositivo. -->
+                     schermo reale, per vedere come si adatta la UI su schermi più piccoli/grandi
+                     senza cambiare dispositivo. -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -669,5 +671,54 @@
             android:layout_width="160dp"
             android:layout_height="160dp" />
     </androidx.cardview.widget.CardView>
+
+    <!-- Nasconde il pannello debug (spinner/slider) per testare l'app più comodamente, senza
+         doverlo chiudere manualmente ogni volta -->
+    <androidx.cardview.widget.CardView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="12dp"
+        app:cardBackgroundColor="#CC111111"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="4dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp">
+
+            <CheckBox
+                android:id="@+id/checkbox_hide_panel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nascondi pannello"
+                android:textColor="@color/white"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- Floating Menu Button -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/btn_menu"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="16dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardBackgroundColor="@color/white"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="6dp">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="12dp"
+            android:src="@drawable/ic_hamburger"
+            android:contentDescription="@string/open_menu"
+            app:tint="@color/black" />
+    </com.google.android.material.card.MaterialCardView>
 
 </FrameLayout>

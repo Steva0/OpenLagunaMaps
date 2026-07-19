@@ -34,6 +34,10 @@ class SettingsFragment : Fragment() {
         setupSpinners()
         setupSpeedUnit()
         loadSettings()
+
+        binding.btnMenu.setOnClickListener {
+            (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
+        }
     }
 
     private fun setupSpeedUnit() {

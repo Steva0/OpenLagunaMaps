@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 102
-        versionName = "1.69-pulsante-menu-volante"
+        versionCode = 103
+        versionName = "1.70-devtools-nascondi-pannello"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -25,6 +25,10 @@ class AboutFragment : Fragment() {
         root.findViewById<Button>(R.id.btn_cv)?.setOnClickListener {
             openUrl("https://europa.eu/europass/eportfolio/api/eprofile/shared-profile/michele-stevanin/5f317bb5-67f7-40f7-9dd7-1027464d0870?view=html")
         }
+
+        root.findViewById<View>(R.id.btn_menu)?.setOnClickListener {
+            (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
+        }
         
         return root
     }

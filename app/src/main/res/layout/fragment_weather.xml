@@ -18,6 +18,11 @@
             android:orientation="vertical"
             android:padding="16dp">
 
+            <!-- Spazio per il tasto menu floating -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="56dp" />
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -285,7 +290,13 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:orientation="vertical"
+        android:padding="32dp"
         android:visibility="gone">
+
+        <!-- Spazio per il tasto menu floating (anche in caricamento) -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="56dp" />
 
         <ProgressBar
             android:layout_width="wrap_content"
@@ -308,6 +319,11 @@
         android:orientation="vertical"
         android:padding="32dp"
         android:visibility="visible">
+
+        <!-- Spazio per il tasto menu floating (anche in errore) -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="56dp" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -342,5 +358,26 @@
             android:text="Riprova"
             app:backgroundTint="@color/marine_blue" />
     </LinearLayout>
+
+    <!-- Floating Menu Button -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/btn_menu"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="16dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardBackgroundColor="@color/white"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="6dp">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="12dp"
+            android:src="@drawable/ic_hamburger"
+            android:contentDescription="@string/open_menu"
+            app:tint="@color/black" />
+    </com.google.android.material.card.MaterialCardView>
 
 </FrameLayout>

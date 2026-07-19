@@ -81,6 +81,16 @@ class DevToolsFragment : Fragment() {
         setupOfflineMapPanel()
         setupMapColorsPanel()
 
+        binding.btnMenu.setOnClickListener {
+            (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
+        }
+
+        // Nasconde il pannello debug (spinner/slider) per testare l'app più comodamente,
+        // senza tool di sviluppo davanti alla visuale.
+        binding.checkboxHidePanel.setOnCheckedChangeListener { _, checked ->
+            binding.cardDebugPanel.visibility = if (checked) View.GONE else View.VISIBLE
+        }
+
         // Il simulatore parte automaticamente: il joystick è sempre visibile in Dev Tools
         startSimulator()
     }
