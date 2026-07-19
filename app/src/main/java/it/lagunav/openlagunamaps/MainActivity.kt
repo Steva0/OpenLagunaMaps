@@ -1,7 +1,6 @@
 package it.lagunav.openlagunamaps
 
 import android.os.Bundle
-import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AppCompatActivity
@@ -60,10 +59,6 @@ class MainActivity : AppCompatActivity() {
             currentFragment = newFragment
         }
         transaction.commit()
-
-        // Il pulsante menu "volante" serve solo nelle schermate senza un proprio pulsante menu
-        // incorporato (Mappa ce l'ha già nella barra di ricerca).
-        binding.cardFabMenu.visibility = if (itemId == R.id.nav_map) View.GONE else View.VISIBLE
     }
 
     /**
@@ -139,8 +134,6 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Strumenti Dev $status", Toast.LENGTH_SHORT).show()
             true
         }
-
-        binding.btnFabMenu.setOnClickListener { openDrawer() }
 
         binding.navView.setNavigationItemSelectedListener { menuItem ->
             val factory: (() -> Fragment)? = when (menuItem.itemId) {
