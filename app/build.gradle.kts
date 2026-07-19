@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 108
-        versionName = "1.75-fix-ux-origine-percorso"
+        versionCode = 109
+        versionName = "1.76-fix-x-annulla-e-luoghi-salvati-come-origine"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

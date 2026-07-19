@@ -1210,6 +1210,10 @@ class MapFragment : Fragment() {
      *  schermo: in quel caso chiudendo questa schermata si torna alla lista invece che alla
      *  mappa/barra di ricerca (vedi closeSavePlaceScreen). */
     private fun editSavedPlace(place: SavedPlace, fromSavedList: Boolean = false) {
+        // Se si stava scegliendo il punto di partenza (anche dalla lista "Luoghi salvati" a
+        // tutto schermo, che chiama questa stessa funzione), il luogo toccato deve diventare
+        // l'origine, non aprire la sua scheda di modifica/destinazione.
+        if (pickingOrigin) { setPlanningOrigin(place.toLatLng(), place.name); return }
         if (isMapInteractionLocked()) return
         // Vedi commento in showPlaceDetail(): senza questo il follow mode ricentra sulla barca
         // ogni fotogramma, annullando lo spostamento verso il luogo selezionato.
@@ -1342,13 +1346,18 @@ class MapFragment : Fragment() {
         pickingOrigin = true
         binding.cardRoutePlanning.visibility = View.GONE
         binding.cardSearch.visibility = View.VISIBLE
+        // L'hamburger diventa una X finché si sta scegliendo il punto di partenza: è l'unico
+        // modo visibile di uscire da questa ricerca senza selezionare nulla (vedi il listener
+        // di btnMenu, che mentre pickingOrigin=true annulla invece di aprire il drawer).
+        binding.btnMenu.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
         showPlacesList()
     }
 
-    /** Annulla la scelta del punto di partenza (tasto indietro) senza cambiare nulla: torna
+    /** Annulla la scelta del punto di partenza (tasto indietro o X) senza cambiare nulla: torna
      *  alla card di pianificazione con l'origine che c'era prima. */
     private fun cancelPickingOrigin() {
         pickingOrigin = false
+        binding.btnMenu.setImageResource(R.drawable.ic_hamburger)
         hidePlacesList()
         hideKeyboard()
         binding.cardSearch.visibility = View.GONE
@@ -1357,6 +1366,7 @@ class MapFragment : Fragment() {
 
     private fun setPlanningOrigin(pos: LatLng, name: String) {
         pickingOrigin = false
+        binding.btnMenu.setImageResource(R.drawable.ic_hamburger)
         planningOrigin = pos
         planningOriginName = name
         hidePlacesList()
@@ -1607,7 +1617,11 @@ class MapFragment : Fragment() {
 
         // Schermata "Luoghi salvati"
         binding.btnMenu.setOnClickListener {
-            (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
+            // Mentre si sta scegliendo un punto di partenza, questo stesso pulsante (icona
+            // cambiata in una X, vedi startPickingOrigin) annulla la scelta invece di aprire
+            // il drawer — altrimenti non c'era alcun modo visibile di uscire da quella ricerca.
+            if (pickingOrigin) cancelPickingOrigin()
+            else (activity as? it.lagunav.openlagunamaps.MainActivity)?.openDrawer()
         }
         binding.btnSavedPlacesBack.setOnClickListener { closeSavedPlacesScreen() }
         binding.btnFilterBerth.setOnClickListener { toggleSavedPlacesFilter(PlaceType.BERTH) }
@@ -1768,7 +1782,6 @@ class MapFragment : Fragment() {
     private fun selectPlace(place: SavedPlace) {
         hideKeyboard()
         hidePlacesList()
-        if (pickingOrigin) { setPlanningOrigin(place.toLatLng(), place.name); return }
         editSavedPlace(place)
     }
 
