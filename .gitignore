@@ -18,3 +18,8 @@ keystore.properties
 
 # Kotlin compiler cache
 .kotlin/
+
+# Database mappa offline (>100MB, oltre il limite di GitHub): rigenerato dalla pipeline
+# Python (genera_tiles_offline.py / BUILD_ALL.py in D:\download), non versionato.
+app/src/main/assets/tiles_vector.mbtiles
+app/src/main/assets/mbgl-offline.db
