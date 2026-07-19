@@ -14,6 +14,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.location.Location
 import android.location.LocationManager
+import android.util.Log
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -2025,19 +2026,27 @@ class MapFragment : Fragment() {
         // Banner GPS disattivato/permesso mancante: il tap fa la cosa giusta per il problema
         // in corso (vedi updateGpsEnabledBanner per quale messaggio/stato è mostrato).
         binding.cardGpsDisabled.setOnClickListener {
+            // DEBUG TEMPORANEO: capire se il problema è che il tocco non arriva quasi mai
+            // (questo log non comparirebbe quasi mai) o se arriva sempre ma la richiesta di
+            // permesso/impostazioni non parte in modo affidabile (il log comparirebbe sempre,
+            // ma il dialog/le impostazioni no).
+            Log.d("GpsBanner", "Banner toccato — hasPermission=${hasLocationPermission()}")
             if (!hasLocationPermission()) {
                 if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ||
                     !prefs.getBoolean(KEY_ASKED_LOCATION_PERMISSION, false)
                 ) {
+                    Log.d("GpsBanner", "-> lancio il dialog di sistema")
                     prefs.edit().putBoolean(KEY_ASKED_LOCATION_PERMISSION, true).apply()
                     locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 } else {
                     // "Non chiedere più" già selezionato in passato: il sistema non mostrerebbe
                     // più il dialog, l'unica via è le impostazioni dell'app.
+                    Log.d("GpsBanner", "-> apro le impostazioni dell'app (permesso negato definitivamente)")
                     startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:${requireContext().packageName}")))
                 }
             } else {
+                Log.d("GpsBanner", "-> apro le impostazioni di localizzazione di sistema")
                 startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
             }
         }

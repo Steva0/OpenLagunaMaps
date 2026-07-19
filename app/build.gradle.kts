@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 110
-        versionName = "1.77-tag-versione-solo-dev-e-permessi-gps"
+        versionCode = 111
+        versionName = "1.78-fix-nocompress-pacchetto-offline"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -34,6 +34,15 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+    }
+
+    // Il database della mappa offline precotta (mbgl-offline.db, ~150MB) va bundlato SENZA
+    // compressione: Android/AAPT ha bug noti nel leggere via AssetManager asset compressi molto
+    // grandi (oltre gli ~100MB), che possono fallire in modo silenzioso invece di dare un errore
+    // chiaro — probabile causa per cui il pacchetto offline non risultava mai davvero copiato/
+    // utilizzabile al primo avvio.
+    androidResources {
+        noCompress += "db"
     }
 }
 

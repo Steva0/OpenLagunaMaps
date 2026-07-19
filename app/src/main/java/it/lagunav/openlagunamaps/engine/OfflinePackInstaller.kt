@@ -3,6 +3,7 @@ package it.lagunav.openlagunamaps.engine
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.io.File
 
 /**
@@ -15,6 +16,7 @@ import java.io.File
  * copia arriva dopo trova già un file (vuoto) al suo posto e non lo sovrascrive.
  */
 object OfflinePackInstaller {
+    private const val TAG = "OfflinePackInstaller"
     private const val ASSET_NAME = "mbgl-offline.db"
 
     fun installIfNeeded(context: Context, onDone: () -> Unit) {
@@ -22,16 +24,27 @@ object OfflinePackInstaller {
         // Se esiste già (bundle precedente già installato, o un pacchetto scaricato con Dev
         // Tools) non lo tocchiamo: non vogliamo cancellare un download più recente dell'utente.
         if (dest.exists()) {
+            Log.d(TAG, "Pacchetto già presente (${dest.length()} byte), copia saltata")
             onDone()
             return
         }
         Thread {
             try {
+                val assetSize = context.assets.openFd(ASSET_NAME).use { it.length }
                 context.assets.open(ASSET_NAME).use { input ->
                     dest.outputStream().use { output -> input.copyTo(output, bufferSize = 1 shl 20) }
                 }
+                // Verifica esplicita invece di assumere che "nessuna eccezione" = copia integra:
+                // un asset di queste dimensioni (~150MB) è proprio il caso in cui Android può
+                // troncare/fallire la lettura senza sollevare un'eccezione chiara.
+                if (dest.length() != assetSize) {
+                    Log.e(TAG, "Copia incompleta: attesi $assetSize byte, copiati ${dest.length()}")
+                    dest.delete()
+                } else {
+                    Log.d(TAG, "Pacchetto copiato correttamente (${dest.length()} byte)")
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Errore copiando il pacchetto offline", e)
                 dest.delete()
             }
             Handler(Looper.getMainLooper()).post { onDone() }
