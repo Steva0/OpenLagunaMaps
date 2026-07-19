@@ -27,18 +27,49 @@ object LocalAssetInstaller {
         "glyphs.db" to "SELECT count(*) FROM glyphs LIMIT 1",
     )
 
+    private const val VERSION_ASSET = "tiles_version.txt"
+
     fun installIfNeeded(context: Context, onDone: () -> Unit) {
         Thread {
+            // Se i dati bundlati nell'APK sono più recenti di quelli già copiati in filesDir da
+            // un'installazione precedente (es. l'utente ha aggiornato l'app, non reinstallato),
+            // forza la ricopia di tutto: altrimenti installOne() li lascerebbe per sempre
+            // invariati pensando fossero già a posto, e la mappa offline resterebbe quella vecchia.
+            val forceReinstall = isBundledVersionNewer(context)
             for ((assetName, checkQuery) in DB_ASSETS) {
-                installOne(context, assetName, checkQuery)
+                installOne(context, assetName, checkQuery, forceReinstall)
             }
+            updateInstalledVersionMarker(context)
             Handler(Looper.getMainLooper()).post { onDone() }
         }.start()
     }
 
-    private fun installOne(context: Context, assetName: String, checkQuery: String) {
+    private fun isBundledVersionNewer(context: Context): Boolean {
+        val bundled = try {
+            context.assets.open(VERSION_ASSET).bufferedReader().use { it.readText() }.trim()
+        } catch (e: Exception) {
+            Log.d(TAG, "Nessun $VERSION_ASSET negli asset, salto il controllo versione")
+            return false
+        }
+        val installed = File(context.filesDir, VERSION_ASSET).takeIf { it.exists() }
+            ?.readText()?.trim()
+        val isNewer = bundled != installed
+        Log.d(TAG, "Versione dati: bundlata=$bundled installata=$installed -> ${if (isNewer) "aggiorno" else "invariata"}")
+        return isNewer
+    }
+
+    private fun updateInstalledVersionMarker(context: Context) {
+        try {
+            val bundled = context.assets.open(VERSION_ASSET).bufferedReader().use { it.readText() }
+            File(context.filesDir, VERSION_ASSET).writeText(bundled)
+        } catch (e: Exception) {
+            Log.d(TAG, "Nessun $VERSION_ASSET da salvare")
+        }
+    }
+
+    private fun installOne(context: Context, assetName: String, checkQuery: String, forceReinstall: Boolean) {
         val dest = File(context.filesDir, assetName)
-        if (dest.exists() && isValidSqlite(dest, checkQuery)) {
+        if (!forceReinstall && dest.exists() && isValidSqlite(dest, checkQuery)) {
             Log.d(TAG, "$assetName già presente e valido (${dest.length()} byte), copia saltata")
             return
         }
