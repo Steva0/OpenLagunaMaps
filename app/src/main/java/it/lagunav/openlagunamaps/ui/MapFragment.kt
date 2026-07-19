@@ -86,6 +86,10 @@ import kotlin.math.sqrt
 
 private const val PREFS_NAME            = "laguna_prefs"
 private const val KEY_MOB_PINS          = "mob_pins"
+// true dopo la primissima richiesta del permesso posizione: serve a distinguere "non ancora
+// chiesto" da "negato con 'Non chiedere più'" (in quel caso il sistema non mostra più il
+// dialog, va indirizzato alle impostazioni dell'app invece di rilanciare la richiesta).
+private const val KEY_ASKED_LOCATION_PERMISSION = "asked_location_permission"
 // Non privato: serve anche a DevToolsFragment per definire la regione da scaricare offline
 // con lo stesso identico stile usato dalla mappa (l'offline pack è specifico per styleURL).
 const val STYLE_DAY                     = "https://tiles.openfreemap.org/styles/liberty"
@@ -260,7 +264,12 @@ class MapFragment : Fragment() {
 
     private val locationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) startGnss() }
+    ) { granted ->
+        if (granted) startGnss()
+        // Aggiorna subito il banner: se negato, deve dire "permesso necessario" invece di
+        // restare sul messaggio (sbagliato) "GPS disattivato" o sparire senza spiegazioni.
+        updateGpsEnabledBanner()
+    }
 
     // Callback registrato su SimulatorHub
     private val simCallback: (Location) -> Unit = { onGpsFix(it) }
@@ -285,7 +294,14 @@ class MapFragment : Fragment() {
         setupSearch()
         setupButtons()
         setFollowMode(true)  // di default la visuale segue la barca (anche alla prima apertura)
-        binding.tvBuildTag.text = "v${it.lagunav.openlagunamaps.BuildConfig.VERSION_NAME} (${it.lagunav.openlagunamaps.BuildConfig.VERSION_CODE})"
+        // Etichetta versione/build: solo in Dev Tools (debugMode), non nella Mappa normale —
+        // serve solo a noi per verificare a colpo d'occhio quale build è installata.
+        if (debugMode) {
+            binding.tvBuildTag.text = "v${it.lagunav.openlagunamaps.BuildConfig.VERSION_NAME} (${it.lagunav.openlagunamaps.BuildConfig.VERSION_CODE})"
+            binding.tvBuildTag.visibility = View.VISIBLE
+        } else {
+            binding.tvBuildTag.visibility = View.GONE
+        }
         applyUiTuning()
     }
 
@@ -711,6 +727,10 @@ class MapFragment : Fragment() {
             gnssProvider = p
             p.start { onGpsFix(it) }
         } else {
+            // Segna che il dialog di sistema è stato mostrato almeno una volta, anche quando la
+            // richiesta parte da qui in automatico (all'avvio) e non dal tap sul banner — è
+            // l'unico modo di distinguere poi "non ancora chiesto" da "negato definitivamente".
+            prefs.edit().putBoolean(KEY_ASKED_LOCATION_PERMISSION, true).apply()
             locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
@@ -2002,9 +2022,24 @@ class MapFragment : Fragment() {
 
         binding.btnNavChipClose.setOnClickListener { cancelRoute() }
 
-        // Banner GPS disattivato: tap -> apre le impostazioni di localizzazione di sistema
+        // Banner GPS disattivato/permesso mancante: il tap fa la cosa giusta per il problema
+        // in corso (vedi updateGpsEnabledBanner per quale messaggio/stato è mostrato).
         binding.cardGpsDisabled.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            if (!hasLocationPermission()) {
+                if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                    !prefs.getBoolean(KEY_ASKED_LOCATION_PERMISSION, false)
+                ) {
+                    prefs.edit().putBoolean(KEY_ASKED_LOCATION_PERMISSION, true).apply()
+                    locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                } else {
+                    // "Non chiedere più" già selezionato in passato: il sistema non mostrerebbe
+                    // più il dialog, l'unica via è le impostazioni dell'app.
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:${requireContext().packageName}")))
+                }
+            } else {
+                startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            }
         }
     }
 
@@ -2016,10 +2051,24 @@ class MapFragment : Fragment() {
         override fun onReceive(context: Context?, intent: Intent?) = updateGpsEnabledBanner()
     }
 
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Un solo banner per due problemi diversi (permesso mancante, o GPS di sistema spento):
+     *  senza il permesso, l'app non può nemmeno controllare se il GPS è acceso, quindi va
+     *  controllato per primo — altrimenti l'utente vedrebbe "GPS disattivato" (sbagliato) anche
+     *  quando il vero problema è il permesso mai concesso/negato. */
     private fun updateGpsEnabledBanner() {
         if (debugMode || _binding == null) return
+        if (!hasLocationPermission()) {
+            binding.tvGpsDisabledText.text = "Permesso posizione necessario — tocca per attivarlo"
+            binding.cardGpsDisabled.visibility = View.VISIBLE
+            return
+        }
         val lm = requireContext().getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val enabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+        binding.tvGpsDisabledText.text = "GPS disattivato — tocca per attivarlo"
         binding.cardGpsDisabled.visibility = if (!enabled) View.VISIBLE else View.GONE
     }
 

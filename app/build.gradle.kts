@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 109
-        versionName = "1.76-fix-x-annulla-e-luoghi-salvati-come-origine"
+        versionCode = 110
+        versionName = "1.77-tag-versione-solo-dev-e-permessi-gps"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
