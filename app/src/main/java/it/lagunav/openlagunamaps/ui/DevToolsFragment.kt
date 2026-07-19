@@ -110,6 +110,7 @@ override fun onCreateView(
                 binding.groupCameraSettings.visibility = if (position == 3) View.VISIBLE else View.GONE
                 binding.groupSetPosition.visibility    = if (position == 4) View.VISIBLE else View.GONE
                 binding.groupOfflineMap.visibility     = if (position == 5) View.VISIBLE else View.GONE
+                if (position == 5) setupOfflineMapPanel()
                 if (position != 2) { simAbStart = null; simAbEnd = null }
                 if (position == 0) binding.tvDevStatus.text = "Simulatore pronto — joystick per muovere"
             }
@@ -374,6 +375,11 @@ override fun onCreateView(
         }
         val port = it.lagunav.openlagunamaps.engine.LocalTileServer.port
         binding.tvOfflineStatus.text = "Mappa locale (server su porta $port): $sizes"
+
+        // Contorno dell'area bundlata (laguna + 35km): oltre questo bordo la mappa dipende dalla
+        // cache online dinamica (se disponibile), non dal pacchetto sempre presente nell'APK.
+        val bounds = childMap?.routingEngine?.getProjectBoundsWithMargin(35_000.0)
+        childMap?.showOfflineRegionBoundary(bounds)
     }
 
     // =================================================================

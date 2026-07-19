@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 113
-        versionName = "1.80-mappa-offline-tile-server-locale"
+        versionCode = 116
+        versionName = "1.83-contorno-area-e-limite-cache"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

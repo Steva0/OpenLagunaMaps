@@ -31,6 +31,14 @@ object LocalTileServer {
     private const val REMOTE_RETRY_BACKOFF_MS = 30_000L
     private const val REMOTE_TIMEOUT_MS = 4_000
 
+    // Tetto alla cache scrivibile delle tile scaricate al volo fuori dall'area bundlata: senza
+    // limite crescerebbe indefinitamente navigando molto online. Quando superato, si cancellano
+    // le tile più LONTANE da Venezia (non le più vecchie): quello che conta è tenere quello che
+    // serve davvero per navigare in laguna, non la cronologia di quando è stato scaricato.
+    private const val MAX_CACHE_BYTES = 200L * 1_000_000L
+    private const val VENICE_LAT = 45.4371
+    private const val VENICE_LON = 12.3345
+
     private var server: Server? = null
     var port: Int = -1
         private set
@@ -76,6 +84,19 @@ object LocalTileServer {
         }
     }
 
+    /** Distanza approssimata (km) tra il centro del tile z/x/y e Venezia, per decidere quali
+     *  tile buttare via per prime quando la cache supera il tetto massimo. Approssimazione
+     *  equirettangolare: più che sufficiente per un ordinamento, non serve precisione geodetica. */
+    private fun tileDistanceFromVeniceKm(z: Int, x: Int, y: Int): Double {
+        val n = (1 shl z).toDouble()
+        val lon = (x + 0.5) / n * 360.0 - 180.0
+        val latRad = kotlin.math.atan(kotlin.math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n)))
+        val lat = Math.toDegrees(latRad)
+        val dLat = Math.toRadians(lat - VENICE_LAT)
+        val dLon = Math.toRadians(lon - VENICE_LON) * kotlin.math.cos(Math.toRadians((lat + VENICE_LAT) / 2))
+        return kotlin.math.sqrt(dLat * dLat + dLon * dLon) * 6371.0
+    }
+
     private fun fetchRemoteTile(template: String, z: Int, x: Int, y: Int): ByteArray? {
         val now = System.currentTimeMillis()
         if (now < nextRemoteAttemptAllowedAt) return null
@@ -99,17 +120,31 @@ object LocalTileServer {
         private val cacheDbLock = Any()
         private var cacheDb: SQLiteDatabase? = null
 
+        // Connessioni di sola lettura riusate: aprire un SQLiteDatabase da 150MB ad ogni singola
+        // richiesta di tile era abbastanza lento da far scadere la richiesta prima di completarsi
+        // (il loop camera, aggiornando la posizione decine di volte al secondo, fa ricalcolare a
+        // MapLibre le tile "necessarie" e annulla quelle ancora in corso) — risultato: le tile
+        // più pesanti (zoom alto, vicino) non arrivavano mai a scaricarsi, schermo bianco proprio
+        // dove si zooma di più. SQLiteDatabase supporta letture concorrenti da più thread sulla
+        // stessa connessione, quindi una sola apertura per file basta e avanza.
+        private val readOnlyDbsLock = Any()
+        private val readOnlyDbs = HashMap<String, SQLiteDatabase?>()
+
         private fun dbFile(name: String) = File(context.filesDir, name)
 
-        private fun openReadOnly(name: String): SQLiteDatabase? {
+        private fun openReadOnly(name: String): SQLiteDatabase? = synchronized(readOnlyDbsLock) {
+            if (readOnlyDbs.containsKey(name)) return readOnlyDbs[name]
             val f = dbFile(name)
-            if (!f.exists()) return null
-            return try {
-                SQLiteDatabase.openDatabase(f.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-            } catch (e: Exception) {
-                Log.e(TAG, "Impossibile aprire $name", e)
-                null
-            }
+            val db = if (f.exists()) {
+                try {
+                    SQLiteDatabase.openDatabase(f.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Impossibile aprire $name", e)
+                    null
+                }
+            } else null
+            readOnlyDbs[name] = db
+            db
         }
 
         /** Cache scrivibile per le tile vettoriali scaricate al volo fuori dall'area bundlata.
@@ -119,10 +154,41 @@ object LocalTileServer {
             cacheDb?.let { return it }
             val db = SQLiteDatabase.openOrCreateDatabase(dbFile("tiles_vector_cache.mbtiles"), null)
             db.execSQL(
-                "CREATE TABLE IF NOT EXISTS tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB, PRIMARY KEY (zoom_level, tile_column, tile_row))"
+                "CREATE TABLE IF NOT EXISTS tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB, dist_km REAL, PRIMARY KEY (zoom_level, tile_column, tile_row))"
             )
             cacheDb = db
             db
+        }
+
+        /** Inserisce la tile in cache (z/x/y non capovolti, per il calcolo distanza — tmsRow è
+         *  solo la convenzione di storage) e, se il file supera il tetto massimo, cancella le
+         *  tile più lontane da Venezia finché non si rientra nel limite. */
+        private fun insertIntoCacheAndEvict(cache: SQLiteDatabase, z: Int, x: Int, y: Int, tmsRow: Int, data: ByteArray) {
+            synchronized(cacheDbLock) {
+                val distKm = tileDistanceFromVeniceKm(z, x, y)
+                cache.execSQL(
+                    "INSERT OR REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data, dist_km) VALUES (?, ?, ?, ?, ?)",
+                    arrayOf(z, x, tmsRow, data, distKm)
+                )
+                var totalBytes = cache.rawQuery("SELECT COALESCE(SUM(LENGTH(tile_data)), 0) FROM tiles", null).use {
+                    it.moveToFirst(); it.getLong(0)
+                }
+                if (totalBytes <= MAX_CACHE_BYTES) return
+                cache.rawQuery("SELECT zoom_level, tile_column, tile_row, LENGTH(tile_data) FROM tiles ORDER BY dist_km DESC", null).use { cursor ->
+                    while (totalBytes > MAX_CACHE_BYTES && cursor.moveToNext()) {
+                        val zz = cursor.getInt(0)
+                        val xx = cursor.getInt(1)
+                        val rr = cursor.getInt(2)
+                        val size = cursor.getLong(3)
+                        cache.execSQL(
+                            "DELETE FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",
+                            arrayOf(zz, xx, rr)
+                        )
+                        totalBytes -= size
+                    }
+                }
+                Log.d(TAG, "Cache tile evictata, dimensione ora ~${totalBytes / 1_000_000}MB")
+            }
         }
 
         override fun serve(session: IHTTPSession): Response {
@@ -165,10 +231,8 @@ object LocalTileServer {
             val (z, x, y) = parseZxy(path) ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "bad path")
             val tmsRow = (1 shl z) - 1 - y
             val db = openReadOnly(dbName) ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no db")
-            db.use {
-                queryTile(it, z, x, tmsRow)?.let { data ->
-                    return newFixedLengthResponse(Response.Status.OK, mime, data.inputStream(), data.size.toLong())
-                }
+            queryTile(db, z, x, tmsRow)?.let { data ->
+                return newFixedLengthResponse(Response.Status.OK, mime, data.inputStream(), data.size.toLong())
             }
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no tile")
         }
@@ -180,7 +244,7 @@ object LocalTileServer {
             val tmsRow = (1 shl z) - 1 - y
             val mime = "application/x-protobuf"
 
-            openReadOnly("tiles_vector.mbtiles")?.use { db ->
+            openReadOnly("tiles_vector.mbtiles")?.let { db ->
                 queryTile(db, z, x, tmsRow)?.let { data ->
                     return newFixedLengthResponse(Response.Status.OK, mime, data.inputStream(), data.size.toLong())
                 }
@@ -195,12 +259,7 @@ object LocalTileServer {
             if (template != null) {
                 val data = fetchRemoteTile(template, z, x, y)
                 if (data != null) {
-                    synchronized(cacheDbLock) {
-                        cache.execSQL(
-                            "INSERT OR REPLACE INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)",
-                            arrayOf(z, x, tmsRow, data)
-                        )
-                    }
+                    insertIntoCacheAndEvict(cache, z, x, y, tmsRow, data)
                     return newFixedLengthResponse(Response.Status.OK, mime, data.inputStream(), data.size.toLong())
                 }
             }
@@ -218,15 +277,13 @@ object LocalTileServer {
                 ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "bad range")
 
             val db = openReadOnly("glyphs.db") ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no db")
-            db.use {
-                it.rawQuery(
-                    "SELECT data FROM glyphs WHERE fontstack=? AND range_start=?",
-                    arrayOf(fontstack, rangeStart.toString())
-                ).use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val data = cursor.getBlob(0)
-                        return newFixedLengthResponse(Response.Status.OK, "application/x-protobuf", data.inputStream(), data.size.toLong())
-                    }
+            db.rawQuery(
+                "SELECT data FROM glyphs WHERE fontstack=? AND range_start=?",
+                arrayOf(fontstack, rangeStart.toString())
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val data = cursor.getBlob(0)
+                    return newFixedLengthResponse(Response.Status.OK, "application/x-protobuf", data.inputStream(), data.size.toLong())
                 }
             }
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "no glyph")

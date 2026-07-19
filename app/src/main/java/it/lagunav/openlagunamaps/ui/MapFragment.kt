@@ -143,6 +143,39 @@ class MapFragment : Fragment() {
         }
     }
 
+    /** Disegna (o rimuove, passando null) il rettangolo del confine dell'area mappa offline
+     *  bundlata (laguna + 35km) — solo per Dev Tools, per capire subito dove finisce la
+     *  copertura garantita anche senza connessione (oltre, la mappa dipende dalla cache online
+     *  dinamica di LocalTileServer, quindi sparisce se non c'è rete). */
+    fun showOfflineRegionBoundary(bounds: Pair<LatLng, LatLng>?) {
+        val geoJson = if (bounds != null) {
+            val (sw, ne) = bounds
+            val ring = listOf(
+                sw, LatLng(sw.latitude, ne.longitude), ne, LatLng(ne.latitude, sw.longitude), sw
+            )
+            val coords = JsonArray().also { arr -> ring.forEach { p -> arr.add(JsonArray().apply { add(p.longitude); add(p.latitude) }) } }
+            val feat = JsonObject().apply {
+                addProperty("type", "Feature"); add("properties", JsonObject())
+                add("geometry", JsonObject().apply { addProperty("type", "LineString"); add("coordinates", coords) })
+            }
+            JsonObject().apply { addProperty("type", "FeatureCollection"); add("features", JsonArray().apply { add(feat) }) }.toString()
+        } else emptyFc()
+
+        mapLibre?.getStyle { style ->
+            val existing = style.getSource(SOURCE_OFFLINE_BOUNDARY) as? GeoJsonSource
+            if (existing != null) {
+                existing.setGeoJson(geoJson)
+            } else {
+                style.addSource(GeoJsonSource(SOURCE_OFFLINE_BOUNDARY, geoJson))
+                style.addLayer(LineLayer(LAYER_OFFLINE_BOUNDARY, SOURCE_OFFLINE_BOUNDARY).withProperties(
+                    lineColor("#FF00FF"),
+                    lineWidth(3f),
+                    lineOpacity(0.9f)
+                ))
+            }
+        }
+    }
+
     /** Ultima posizione GPS/sim ricevuta — accessibile da DevToolsFragment. */
     var lastGpsLocation: Location? = null
         private set
@@ -175,6 +208,8 @@ class MapFragment : Fragment() {
     private var gnssProvider: PositionProvider? = null
     private val SOURCE_PREVIEW = "preview-route-source"
     private val LAYER_PREVIEW  = "preview-route-layer"
+    private val SOURCE_OFFLINE_BOUNDARY = "offline-boundary-source"
+    private val LAYER_OFFLINE_BOUNDARY  = "offline-boundary-layer"
 
     // Buffer dei fix GPS reali (posizione + istante). Nessun sensore esterno: solo posizione.
     private data class Fix(val t: Long, val lat: Double, val lon: Double)
@@ -379,6 +414,17 @@ class MapFragment : Fragment() {
             // Disabiliamo la bussola built-in di MapLibre e usiamo la nostra (card_compass):
             // così possiamo gestire il tap per uscire da follow mode + reset nord.
             map.uiSettings.isCompassEnabled = false
+
+            // MapLibre ha un suo rilevamento interno online/offline (Mbgl-ConnectivityReceiver)
+            // che, quando pensa di essere offline, blocca TUTTE le richieste di rete native —
+            // comprese quelle verso il nostro server locale (127.0.0.1), che invece è sempre
+            // raggiungibile perché gira sullo stesso dispositivo. Senza questa riga, con la
+            // connessione dati spenta la mappa restava bianca perché MapLibre non chiedeva
+            // nemmeno le tile al server locale (e non c'era nessun errore da vedere: la
+            // richiesta veniva scartata prima ancora di partire). Forziamo "sempre connesso" per
+            // sempre: la reale disponibilità di internet la gestisce da sé LocalTileServer per
+            // il fallback/cache online, non serve che lo sappia anche MapLibre.
+            org.maplibre.android.MapLibre.setConnected(true)
 
             // Prima di questo listener, un fallimento nel caricamento dello stile (es. offline con
             // cache non valida) era totalmente silenzioso: nessun log, nessuna callback, schermo
