@@ -470,10 +470,24 @@
                     android:textColor="#0091EA"
                     android:textSize="13sp" />
 
+                <!-- Punto di partenza: di default la posizione attuale, ma toccando si può
+                     scegliere un punto diverso per vedere solo una stima (vedi
+                     startPickingOrigin/setPlanningOrigin in MapFragment.kt). -->
+                <TextView
+                    android:id="@+id/tv_route_origin"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:paddingVertical="4dp"
+                    android:text="Da: la tua posizione attuale ✎"
+                    android:textColor="#0091EA"
+                    android:textSize="14sp" />
+
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="24dp"
+                    android:layout_marginTop="16dp"
                     android:orientation="horizontal">
 
                     <Button

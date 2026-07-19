@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 106
-        versionName = "1.73-torna-a-lista-luoghi-salvati"
+        versionCode = 107
+        versionName = "1.74-pianifica-percorso-da-punto-scelto"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

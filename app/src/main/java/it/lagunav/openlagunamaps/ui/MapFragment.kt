@@ -413,6 +413,10 @@ class MapFragment : Fragment() {
             }
 
             map.addOnMapLongClickListener { point ->
+                if (pickingOrigin) {
+                    setPlanningOrigin(point, routingEngine.nearestCanalName(point, 50.0) ?: "Punto sulla mappa")
+                    return@addOnMapLongClickListener true
+                }
                 if (!isMapInteractionLocked()) {
                     // Se stavamo seguendo la barca, il loop di camera ricentrerebbe
                     // continuamente sulla barca sovrascrivendo il centraggio sul punto appena
@@ -1087,6 +1091,14 @@ class MapFragment : Fragment() {
 
     private var planningDest: LatLng? = null
     private var planningRoute: List<LatLng>? = null
+    // Punto di partenza scelto per la pianificazione: null = usa la posizione attuale (default,
+    // comportamento di sempre). Se valorizzato, il calcolo mostra solo una stima — non ha senso
+    // avviare una navigazione vera da un punto dove non ti trovi.
+    private var planningOrigin: LatLng? = null
+    private var planningOriginName: String = "la tua posizione attuale"
+    // true mentre l'utente sta scegliendo il punto di partenza (tramite ricerca, luogo salvato,
+    // o tap sulla mappa) — intercetta le stesse azioni che normalmente aprono altri popup.
+    private var pickingOrigin = false
 
     /** true se c'è già un popup/schermata di pianificazione aperta o una navigazione attiva:
      *  in quel caso un nuovo tap lungo sulla mappa deve restare inerte finché non si chiude. */
@@ -1103,6 +1115,10 @@ class MapFragment : Fragment() {
      *  gestito), false se la mappa è già nello stato base e il tasto indietro deve fare
      *  altro (es. tornare alla voce di menu precedente, o uscire dall'app). */
     fun handleBackPress(): Boolean {
+        // Priorità massima: se si stava scegliendo un punto di partenza per la pianificazione,
+        // il tasto indietro annulla la scelta e torna alla card di pianificazione invece di
+        // chiudere altro — senza questo non c'era modo di tornare indietro senza sceglierne uno.
+        if (pickingOrigin) { cancelPickingOrigin(); return true }
         return when {
             binding.cardPlaceDetail.visibility == View.VISIBLE -> { closePlaceDetail(); true }
             binding.cardSavePlace.visibility == View.VISIBLE -> { closeSavePlaceScreen(); true }
@@ -1114,6 +1130,7 @@ class MapFragment : Fragment() {
     }
 
     fun showPlaceDetail(pos: LatLng, name: String) {
+        if (pickingOrigin) { setPlanningOrigin(pos, name); return }
         if (isMapInteractionLocked()) return
         // Altrimenti il loop camera in follow mode ricentra sulla barca 45 volte al secondo,
         // annullando subito lo spostamento verso il punto selezionato qui sotto — sembrava che
@@ -1277,11 +1294,16 @@ class MapFragment : Fragment() {
         binding.cardSearch.visibility = View.GONE
         planningDest = dest
         planningRoute = null
+        // Ogni nuova pianificazione riparte dalla posizione attuale come partenza di default —
+        // la scelta di un punto diverso vale solo per la sessione di pianificazione precedente.
+        planningOrigin = null
+        planningOriginName = "la tua posizione attuale"
 
         val canal = routingEngine.nearestCanalName(dest, 50.0) ?: "Laguna aperta"
         binding.tvRouteDestination.text = canal
         binding.tvRoutePlanningTime.text = "-- min"
         binding.tvRoutePlanningDist.text = "-- km"
+        updateRouteOriginUi()
         binding.layoutRoutePlanningNormal.visibility = View.VISIBLE
         binding.layoutRoutePlanningOutsideArea.visibility = View.GONE
         binding.cardRoutePlanning.visibility = View.VISIBLE
@@ -1292,9 +1314,50 @@ class MapFragment : Fragment() {
         recalcPlanningRoute()
     }
 
+    /** Aggiorna la riga "Da: ..." e nasconde il bottone "Partenza" quando l'origine non è la
+     *  posizione reale — non ha senso avviare una navigazione vera da un punto dove non sei. */
+    private fun updateRouteOriginUi() {
+        binding.tvRouteOrigin.text = "Da: $planningOriginName ✎"
+        binding.btnRoutePlanningStart.visibility = if (planningOrigin == null) View.VISIBLE else View.GONE
+    }
+
+    /** Avvia la scelta di un punto di partenza diverso dalla posizione attuale: nasconde
+     *  temporaneamente la card di pianificazione e apre la stessa lista di ricerca già usata
+     *  per la destinazione (luoghi salvati/ricerca online) — il prossimo tap su un risultato o
+     *  sulla mappa (vedi showPlaceDetail/selectPlace/addOnMapLongClickListener) diventa l'origine
+     *  invece di aprire i popup che aprirebbe normalmente. */
+    private fun startPickingOrigin() {
+        pickingOrigin = true
+        binding.cardRoutePlanning.visibility = View.GONE
+        binding.cardSearch.visibility = View.VISIBLE
+        showPlacesList()
+    }
+
+    /** Annulla la scelta del punto di partenza (tasto indietro) senza cambiare nulla: torna
+     *  alla card di pianificazione con l'origine che c'era prima. */
+    private fun cancelPickingOrigin() {
+        pickingOrigin = false
+        hidePlacesList()
+        hideKeyboard()
+        binding.cardSearch.visibility = View.GONE
+        binding.cardRoutePlanning.visibility = View.VISIBLE
+    }
+
+    private fun setPlanningOrigin(pos: LatLng, name: String) {
+        pickingOrigin = false
+        planningOrigin = pos
+        planningOriginName = name
+        hidePlacesList()
+        hideKeyboard()
+        binding.cardSearch.visibility = View.GONE
+        binding.cardRoutePlanning.visibility = View.VISIBLE
+        updateRouteOriginUi()
+        recalcPlanningRoute()
+    }
+
     private fun recalcPlanningRoute() {
         val dest = planningDest ?: return
-        val origin = lastGpsLocation?.let { LatLng(it.latitude, it.longitude) } ?: run {
+        val origin = planningOrigin ?: lastGpsLocation?.let { LatLng(it.latitude, it.longitude) } ?: run {
             binding.tvRoutePlanningTime.text = "N/A"
             return
         }
@@ -1356,6 +1419,9 @@ class MapFragment : Fragment() {
         val wasEditingExisting = editingPlace
         planningDest = null
         planningRoute = null
+        planningOrigin = null
+        planningOriginName = "la tua posizione attuale"
+        pickingOrigin = false
         binding.cardRoutePlanning.visibility = View.GONE
         binding.speedometer.visibility = View.VISIBLE
         binding.altitudeView.visibility = View.VISIBLE
@@ -1588,6 +1654,7 @@ class MapFragment : Fragment() {
         binding.btnRoutePlanningCancel.setOnClickListener { closeRoutePlanning() }
         binding.btnRoutePlanningClose.setOnClickListener { closeRoutePlanning() }
         binding.btnRoutePlanningStart.setOnClickListener { startPlannedRoute() }
+        binding.tvRouteOrigin.setOnClickListener { startPickingOrigin() }
     }
 
     // =================================================================
@@ -1688,6 +1755,7 @@ class MapFragment : Fragment() {
     private fun selectPlace(place: SavedPlace) {
         hideKeyboard()
         hidePlacesList()
+        if (pickingOrigin) { setPlanningOrigin(place.toLatLng(), place.name); return }
         editSavedPlace(place)
     }
 
