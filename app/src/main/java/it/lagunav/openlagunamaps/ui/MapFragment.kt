@@ -69,6 +69,7 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.*
@@ -691,6 +692,35 @@ class MapFragment : Fragment() {
         ))
     }
 
+    /** Tile quadrata con una "X" rossa: ripetuta come fillPattern forma un tratteggio a croce
+     *  sull'area dello scoglio, invece di un riempimento pieno che coprirebbe i dettagli sotto
+     *  (batimetria/altri layer). Il pattern è un'immagine a dimensione fissa in pixel: se lo
+     *  zoom della mappa aumenta e non cambiamo l'immagine, la stessa area scoglio mostra sempre
+     *  più ripetizioni del pattern (i "quadratini" sembrano rimpicciolirsi). Per questo
+     *  registriamo tile più grandi per gli zoom alti (vedi ROCK_HATCH_STOPS) invece di una sola
+     *  dimensione fissa. */
+    private fun createRockHatchPattern(sizePx: Int): Bitmap {
+        val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val paint = Paint().apply {
+            color = Color.parseColor("#D32F2F")
+            strokeWidth = sizePx / 12f
+            isAntiAlias = true
+        }
+        canvas.drawLine(0f, 0f, sizePx.toFloat(), sizePx.toFloat(), paint)
+        canvas.drawLine(sizePx.toFloat(), 0f, 0f, sizePx.toFloat(), paint)
+        return bmp
+    }
+
+    /** zoom -> (nome immagine, dimensione pattern in px). Oltre l'ultimo stop (17) il pattern
+     *  resta fissato alla dimensione più grande: è il "limite sotto il quale i quadratini
+     *  smettono di rimpicciolirsi" zoomando ancora di più. */
+    private val ROCK_HATCH_STOPS = listOf(
+        9f  to ("rock-hatch-9"  to 16),
+        13f to ("rock-hatch-13" to 24),
+        17f to ("rock-hatch-17" to 40),
+    )
+
     private fun setupLagunaLayers(style: Style) {
         try {
             val buf     = requireContext().assets.open("laguna_vettoriale.json").readBytes()
@@ -702,9 +732,32 @@ class MapFragment : Fragment() {
             style.addLayer(LineLayer("canals-layer", "laguna-source")
                 .withFilter(eq(get("type"), literal("canal")))
                 .withProperties(lineColor(resources.getColor(R.color.marine_blue, null)), lineWidth(3.5f)))
+            // Riempimento tratteggiato "a croce" (pattern generato a runtime, non un PNG negli
+            // asset) per marcare visivamente le zone scoglio come area di pericolo, non solo il
+            // contorno.
+            ROCK_HATCH_STOPS.forEach { (_, nameAndSize) ->
+                val (name, sizePx) = nameAndSize
+                style.addImage(name, createRockHatchPattern(sizePx))
+            }
+            val (firstZoom, firstNameAndSize) = ROCK_HATCH_STOPS.first()
+            val laterStops = ROCK_HATCH_STOPS.drop(1).map { (z, nameAndSize) -> stop(z, literal(nameAndSize.first)) }
+            style.addLayer(FillLayer("rocks-fill-layer", "laguna-source")
+                .withFilter(eq(get("type"), literal("rock")))
+                .withProperties(fillPattern(
+                    step(zoom(), literal(firstNameAndSize.first), *laterStops.toTypedArray())
+                )))
             style.addLayer(LineLayer("rocks-layer", "laguna-source")
                 .withFilter(eq(get("type"), literal("rock")))
-                .withProperties(lineColor(Color.parseColor("#8B4513")), lineWidth(4f)))
+                .withProperties(
+                    lineColor("#D32F2F"),
+                    // Spessore proporzionale allo zoom: a zoom bassi resta sottile (non copre
+                    // aree enormi con un contorno spesso), a zoom alti diventa ben visibile.
+                    lineWidth(interpolate(linear(), zoom(),
+                        stop(9, 1f),
+                        stop(14, 3f),
+                        stop(18, 6f)
+                    ))
+                ))
             val briccole = CircleLayer("briccole-layer", "laguna-source")
                 .withFilter(eq(get("type"), literal("briccola")))
                 .withProperties(

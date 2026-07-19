@@ -402,39 +402,56 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
-                <LinearLayout
+                <!-- Header: Titolo e X allineati -->
+                <RelativeLayout
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
+                    android:layout_height="wrap_content">
 
                     <TextView
-                        android:layout_width="0dp"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="Il punto di partenza (la tua posizione attuale) non è dentro la laguna di Venezia. Per navigare davvero serve trovarsi in laguna, ma puoi comunque scegliere un altro punto di partenza per provare un percorso."
+                        android:layout_centerVertical="true"
+                        android:text="@string/route_planning_outside_title"
                         android:textColor="#222222"
-                        android:textSize="15sp" />
+                        android:textSize="20sp"
+                        android:textStyle="bold" />
 
                     <ImageButton
                         android:id="@+id/btn_route_planning_close"
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:layout_marginStart="8dp"
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:layout_alignParentEnd="true"
+                        android:layout_centerVertical="true"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="Chiudi"
                         android:src="@android:drawable/ic_menu_close_clear_cancel"
-                        app:tint="#444444" />
-                </LinearLayout>
+                        app:tint="#888888" />
+                </RelativeLayout>
 
-                <Button
+                <!-- Descrizione a tutta larghezza -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/route_planning_outside_desc"
+                    android:textColor="#666666"
+                    android:textSize="15sp"
+                    android:lineSpacingExtra="3dp" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_route_planning_pick_origin"
                     style="@style/Widget.MaterialComponents.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Scegli un altro punto di partenza"
-                    android:textColor="@color/marine_blue" />
+                    android:layout_width="match_parent"
+                    android:layout_height="60dp"
+                    android:layout_marginTop="20dp"
+                    android:text="@string/route_planning_pick_origin"
+                    android:textAllCaps="true"
+                    android:textColor="@color/marine_blue"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    app:icon="@android:drawable/ic_menu_mylocation"
+                    app:iconGravity="textStart"
+                    app:cornerRadius="12dp" />
             </LinearLayout>
 
             <LinearLayout
