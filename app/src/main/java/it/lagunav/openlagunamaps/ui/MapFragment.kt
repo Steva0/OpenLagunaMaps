@@ -1081,6 +1081,9 @@ class MapFragment : Fragment() {
     // (tap su un pallino sulla mappa), invece che per salvarne uno nuovo: mostra "Elimina" e
     // aggiorna l'esistente invece di crearne uno nuovo.
     private var editingPlace: SavedPlace? = null
+    // true solo quando la schermata di modifica luogo è stata aperta dalla lista "Luoghi
+    // salvati" a tutto schermo: chiudendola si torna lì invece che alla mappa/ricerca.
+    private var cameFromSavedPlacesList = false
 
     private var planningDest: LatLng? = null
     private var planningRoute: List<LatLng>? = null
@@ -1185,12 +1188,16 @@ class MapFragment : Fragment() {
     }
 
     /** Tap su un pallino già salvato sulla mappa: riapre la stessa schermata precompilata,
-     *  con "Elimina" visibile (vedi setupMap/tapOnSavedPlace per la ricerca del luogo). */
-    private fun editSavedPlace(place: SavedPlace) {
+     *  con "Elimina" visibile (vedi setupMap/tapOnSavedPlace per la ricerca del luogo).
+     *  @param fromSavedList true SOLO quando si arriva dalla lista "Luoghi salvati" a tutto
+     *  schermo: in quel caso chiudendo questa schermata si torna alla lista invece che alla
+     *  mappa/barra di ricerca (vedi closeSavePlaceScreen). */
+    private fun editSavedPlace(place: SavedPlace, fromSavedList: Boolean = false) {
         if (isMapInteractionLocked()) return
         // Vedi commento in showPlaceDetail(): senza questo il follow mode ricentra sulla barca
         // ogni fotogramma, annullando lo spostamento verso il luogo selezionato.
         setFollowMode(false)
+        cameFromSavedPlacesList = fromSavedList
         selectedPlacePos = place.toLatLng()
         selectedPlaceName = place.name
         editingPlace = place
@@ -1211,8 +1218,13 @@ class MapFragment : Fragment() {
         selectedPlacePos = null
         editingPlace = null
         binding.cardSavePlace.visibility = View.GONE
-        binding.cardSearch.visibility = View.VISIBLE
         mapLibre?.getStyle { style -> (style.getSource(SOURCE_DEST) as? GeoJsonSource)?.setGeoJson(emptyFc()) }
+        if (cameFromSavedPlacesList) {
+            cameFromSavedPlacesList = false
+            openSavedPlacesScreen()
+        } else {
+            binding.cardSearch.visibility = View.VISIBLE
+        }
     }
 
     private fun confirmSavePlace() {
@@ -1700,15 +1712,23 @@ class MapFragment : Fragment() {
     private fun refreshSavedPlacesScreenList() {
         val container = binding.layoutSavedPlacesFullList
         container.removeAllViews()
-        PlacesStore.getSaved(requireContext())
+        val allSaved = PlacesStore.getSaved(requireContext())
+        val filtered = allSaved
             .filter { it.type in savedPlacesTypeFilter }
             .sortedBy { it.type.ordinal }
-            .forEach { place ->
-                addPlaceRow(container, "${place.type.icon} ${place.name}", place.type.label) {
-                    closeSavedPlacesScreen()
-                    editSavedPlace(place)
-                }
+
+        binding.scrollSavedPlaces.visibility = if (filtered.isNotEmpty()) View.VISIBLE else View.GONE
+        binding.layoutSavedPlacesEmpty.visibility = if (filtered.isNotEmpty()) View.GONE else View.VISIBLE
+
+        filtered.forEach { place ->
+            addPlaceRow(container, "${place.type.icon} ${place.name}", place.type.label,
+                titleColor = Color.parseColor("#222222"),
+                subtitleColor = Color.parseColor("#888888")
+            ) {
+                closeSavedPlacesScreen()
+                editSavedPlace(place, fromSavedList = true)
             }
+        }
     }
 
     private fun toggleSavedPlacesFilter(type: PlaceType) {
@@ -1718,8 +1738,11 @@ class MapFragment : Fragment() {
     }
 
     private fun updateSavedPlacesFilterButtons() {
-        val selectedTint = android.content.res.ColorStateList.valueOf(Color.parseColor("#0091EA"))
-        val normalTint    = android.content.res.ColorStateList.valueOf(Color.parseColor("#F5F5F5"))
+        val selectedTint = android.content.res.ColorStateList.valueOf(Color.parseColor("#E3F2FD"))
+        val selectedStroke = android.content.res.ColorStateList.valueOf(Color.parseColor("#0091EA"))
+        val normalTint    = android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)
+        val normalStroke   = android.content.res.ColorStateList.valueOf(Color.parseColor("#DDDDDD"))
+        
         mapOf(
             PlaceType.BERTH to binding.btnFilterBerth,
             PlaceType.FAVORITE to binding.btnFilterFavorite,
@@ -1728,6 +1751,8 @@ class MapFragment : Fragment() {
         ).forEach { (type, btn) ->
             val active = type in savedPlacesTypeFilter
             btn.backgroundTintList = if (active) selectedTint else normalTint
+            (btn as? com.google.android.material.button.MaterialButton)?.strokeColor = if (active) selectedStroke else normalStroke
+            btn.setTextColor(if (active) Color.parseColor("#0091EA") else Color.parseColor("#666666"))
         }
     }
 
@@ -1739,25 +1764,53 @@ class MapFragment : Fragment() {
         val ctx = requireContext()
         val outValue = TypedValue()
         ctx.theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
-        // Divisore sottile sopra ogni riga tranne la prima: separa le voci senza dover disegnare
-        // bordi su ciascuna, coerente con lo stile "lista pulita" del resto dell'app.
-        if (container.childCount > 0) {
-            container.addView(View(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1)
-                setBackgroundColor(Color.parseColor("#EEEEEE"))
-            })
-        }
+
         val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 24, 32, 24)
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(48, 40, 48, 40)
             isClickable = true
             isFocusable = true
             setBackgroundResource(outValue.resourceId)
             setOnClickListener { onClick() }
         }
-        row.addView(TextView(ctx).apply { text = title; textSize = 14f; setTextColor(titleColor) })
-        row.addView(TextView(ctx).apply { text = subtitle; textSize = 11f; setTextColor(subtitleColor) })
+
+        val textContainer = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        textContainer.addView(TextView(ctx).apply {
+            text = title
+            textSize = 17f
+            setTextColor(titleColor)
+            setTypeface(null, android.graphics.Typeface.BOLD)
+        })
+        textContainer.addView(TextView(ctx).apply {
+            text = subtitle
+            textSize = 13f
+            setTextColor(subtitleColor)
+            setPadding(0, 4, 0, 0)
+        })
+
+        row.addView(textContainer)
+
+        // Arrow indicator on the right
+        row.addView(TextView(ctx).apply {
+            text = "›"
+            textSize = 24f
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setPadding(16, 0, 0, 0)
+        })
+
         container.addView(row)
+
+        // Divider
+        container.addView(View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2)
+            (layoutParams as LinearLayout.LayoutParams).setMargins(48, 0, 0, 0)
+            setBackgroundColor(Color.parseColor("#F5F5F5"))
+        })
     }
 
     /** Ricerca "nuovi posti" (OpenStreetMap/Nominatim) per la lista di ricerca in tempo reale

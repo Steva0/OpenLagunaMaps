@@ -9,8 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Etichetta versione/build: serve solo per verificare a colpo d'occhio che l'app
-         installata sia l'ultima build compilata. Aggiornata a ogni modifica. -->
+    <!-- Etichetta versione/build -->
     <TextView
         android:id="@+id/tv_build_tag"
         android:layout_width="wrap_content"
@@ -77,8 +76,7 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- Banner GPS disattivato: visibile solo sulla Mappa reale (non in Dev Tools, dove si usa
-         il simulatore). Tap -> apre le impostazioni di localizzazione di sistema. -->
+    <!-- Banner GPS disattivato -->
     <androidx.cardview.widget.CardView
         android:id="@+id/card_gps_disabled"
         android:layout_width="match_parent"
@@ -101,9 +99,7 @@
             android:textStyle="bold" />
     </androidx.cardview.widget.CardView>
 
-    <!-- Lista luoghi: Posto Barca / Preferiti / Recenti. Visibile quando la barra di ricerca
-         ha il focus ed è vuota (come la cronologia di Google Maps), nascosta appena si digita
-         o si seleziona qualcosa. -->
+    <!-- Lista suggerimenti ricerca rapida -->
     <androidx.cardview.widget.CardView
         android:id="@+id/card_places"
         android:layout_width="match_parent"
@@ -124,121 +120,164 @@
             android:paddingVertical="4dp" />
     </androidx.cardview.widget.CardView>
 
-    <!-- Schermata a tutto schermo "Luoghi salvati": elenco completo, filtrabile per tipo.
-         Aperta dal pulsante "Salvati" nel menu di ricerca. -->
-    <androidx.cardview.widget.CardView
+    <!-- Schermata "Luoghi salvati" REDESIGN -->
+    <LinearLayout
         android:id="@+id/card_saved_places"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone"
-        app:cardBackgroundColor="@color/white"
-        app:cardCornerRadius="0dp"
-        app:cardElevation="8dp">
+        android:background="@drawable/bg_panel_top_rounded"
+        android:layout_marginTop="16dp"
+        android:elevation="16dp"
+        android:orientation="vertical">
 
-        <LinearLayout
+        <!-- Custom Header -->
+        <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical">
+            android:layout_height="wrap_content"
+            android:padding="20dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:padding="12dp">
+                android:layout_centerVertical="true"
+                android:text="I tuoi Luoghi"
+                android:textColor="#222222"
+                android:textSize="24sp"
+                android:textStyle="bold" />
 
-                <ImageButton
-                    android:id="@+id/btn_saved_places_back"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Indietro"
-                    android:src="@android:drawable/ic_menu_close_clear_cancel"
-                    app:tint="#444444" />
+            <ImageButton
+                android:id="@+id/btn_saved_places_back"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_alignParentEnd="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Indietro"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                app:tint="#888888" />
+        </RelativeLayout>
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:text="Luoghi salvati"
-                    android:textColor="#222222"
-                    android:textSize="20sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
+        <!-- Filtri in Griglia 2x2 -->
+        <GridLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="2"
+            android:rowCount="2"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="12dp">
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:background="#EEEEEE" />
+            <Button
+                android:id="@+id/btn_filter_berth"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:text="⚓ Posti Barca"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                app:cornerRadius="22dp" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="12dp">
+            <Button
+                android:id="@+id/btn_filter_favorite"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:text="♥ Preferiti"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                app:cornerRadius="22dp" />
 
-                <Button
-                    android:id="@+id/btn_filter_berth"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="⚓"
-                    android:textSize="18sp"
-                    app:backgroundTint="#0091EA"
-                    app:cornerRadius="14dp" />
+            <Button
+                android:id="@+id/btn_filter_special"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:text="🚩 Da visitare"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                app:cornerRadius="22dp" />
 
-                <Button
-                    android:id="@+id/btn_filter_favorite"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="♥"
-                    android:textSize="18sp"
-                    app:backgroundTint="#0091EA"
-                    app:cornerRadius="14dp" />
+            <Button
+                android:id="@+id/btn_filter_generic"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="44dp"
+                android:layout_columnWeight="1"
+                android:layout_margin="4dp"
+                android:text="📍 Altro"
+                android:textAllCaps="false"
+                android:textSize="13sp"
+                app:cornerRadius="22dp" />
+        </GridLayout>
 
-                <Button
-                    android:id="@+id/btn_filter_special"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="🚩"
-                    android:textSize="18sp"
-                    app:backgroundTint="#0091EA"
-                    app:cornerRadius="14dp" />
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginHorizontal="20dp"
+            android:background="#F0F0F0" />
 
-                <Button
-                    android:id="@+id/btn_filter_generic"
-                    android:layout_width="0dp"
-                    android:layout_height="48dp"
-                    android:layout_weight="1"
-                    android:text="📍"
-                    android:textSize="18sp"
-                    app:backgroundTint="#0091EA"
-                    app:cornerRadius="14dp" />
-            </LinearLayout>
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
 
+            <!-- Lista -->
             <ScrollView
+                android:id="@+id/scroll_saved_places"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1">
+                android:layout_height="match_parent">
 
                 <LinearLayout
                     android:id="@+id/layout_saved_places_full_list"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:paddingVertical="4dp" />
+                    android:paddingVertical="8dp" />
             </ScrollView>
-        </LinearLayout>
-    </androidx.cardview.widget.CardView>
 
-    <!-- Popup selezione luogo: stile Waze.
-         Compare dopo tap lungo sulla mappa. Mostra nome canale e azioni. -->
+            <!-- Empty State -->
+            <LinearLayout
+                android:id="@+id/layout_saved_places_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="32dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📍"
+                    android:textSize="64sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Ancora nessun luogo"
+                    android:textColor="#222222"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center"
+                    android:text="Tieni premuto sulla mappa per salvare un punto o un canale."
+                    android:textColor="#888888"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </FrameLayout>
+    </LinearLayout>
+
+    <!-- Popup selezione luogo -->
     <androidx.cardview.widget.CardView
         android:id="@+id/card_place_detail"
         android:layout_width="match_parent"
@@ -337,7 +376,7 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- Pianificazione percorso stile Waze: riassunto e bottoni Partenza/Annulla -->
+    <!-- Pianificazione percorso -->
     <androidx.cardview.widget.CardView
         android:id="@+id/card_route_planning"
         android:layout_width="match_parent"
@@ -355,9 +394,6 @@
             android:orientation="vertical"
             android:padding="20dp">
 
-            <!-- Stato errore specifico: partenza/arrivo fuori dall'area di progetto (la laguna).
-                 Solo la X per chiudere, niente Annulla/Partenza: non ha senso proporre di avviare
-                 una navigazione che non può esistere. -->
             <LinearLayout
                 android:id="@+id/layout_route_planning_outside_area"
                 android:layout_width="match_parent"
