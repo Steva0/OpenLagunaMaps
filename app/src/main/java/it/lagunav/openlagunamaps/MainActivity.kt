@@ -40,44 +40,44 @@ class MainActivity : AppCompatActivity() {
             onContinue()
             return
         }
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_privacy_consent, null)
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Prima di iniziare")
-            .setMessage(
-                "OpenLagunaMaps usa la tua posizione GPS solo sul telefono, per mostrarti sulla " +
-                    "mappa e calcolare le rotte: non viene mai inviata a nostri server (non ne " +
-                    "abbiamo). Quando sei online, la ricerca di canali/luoghi e lo scaricamento " +
-                    "di mappa al di fuori della laguna passano rispettivamente da " +
-                    "OpenStreetMap/Nominatim e OpenFreeMap.\n\n" +
-                    "Continuando accetti l'informativa sulla privacy."
-            )
+            .setView(dialogView)
             .setCancelable(false)
-            .setPositiveButton("Accetto e continua", null)
-            .setNegativeButton("Esci", null)
-            .setNeutralButton("Leggi tutto", null)
             .create()
 
-        dialog.setOnShowListener {
-            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
-                prefs.edit().putBoolean(KEY_PRIVACY_ACCEPTED, true).apply()
-                dialog.dismiss()
-                onContinue()
-            }
-            dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).setOnClickListener {
-                finish()
-            }
-            // Non deve chiudere il dialog: l'utente deve comunque scegliere accetta/esci dopo
-            // aver letto, altrimenti il pulsante "accetta" implicito di AlertDialog al tap
-            // fuori area lo bypasserebbe.
-            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
-            }
+        // Sfondo trasparente per permettere alla CardView di gestire gli angoli arrotondati
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+
+        dialogView.findViewById<android.view.View>(R.id.btn_accept).setOnClickListener {
+            prefs.edit().putBoolean(KEY_PRIVACY_ACCEPTED, true).apply()
+            dialog.dismiss()
+            onContinue()
         }
+
+        dialogView.findViewById<android.view.View>(R.id.btn_read_more).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+        }
+
+        dialogView.findViewById<android.view.View>(R.id.btn_exit).setOnClickListener {
+            finish()
+        }
+
         dialog.show()
     }
 
     companion object {
         private const val KEY_PRIVACY_ACCEPTED = "privacy_policy_accepted"
         const val PRIVACY_POLICY_URL = "https://steva0.github.io/OpenLagunaMaps/privacy-policy.html"
+    }
+
+    /**
+     * Apre il drawer laterale. Chiamata dai fragment (es. MapFragment) 
+     * che integrano il pulsante menu nella propria UI.
+     */
+    fun openDrawer() {
+        binding.drawerLayout.openDrawer(GravityCompat.START)
     }
 
     /**
@@ -89,7 +89,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Cambia la voce di menu SENZA ricreare i fragment già visti (evita di reinflate la
+     * Cambia la voce di menu SENZA ricreare dei fragment già visti (evita di reinflate la
      * MapView/lo stile MapLibre a ogni cambio, che è lento): il primo accesso li crea con
      * add(), i successivi li recuperano per tag e li mostrano di nuovo con show()/hide().
      * Il fragment che esce di scena resta vivo ma nascosto in background.
@@ -112,23 +112,12 @@ class MainActivity : AppCompatActivity() {
         transaction.commit()
     }
 
-    /**
-     * Apre il drawer laterale. Chiamata dai fragment (es. MapFragment) 
-     * che integrano il pulsante menu nella propria UI.
-     */
-    fun openDrawer() {
-        binding.drawerLayout.openDrawer(GravityCompat.START)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
 
-        // Mantieni la splash screen finché la mappa non è pronta o finché non scatta un timeout.
-        // Il timeout è più alto del solito 2s perché la prima volta include anche la copia del
-        // pacchetto mappa offline precotto (~150MB) nello storage interno, prima che la mappa
-        // possa essere creata (vedi OfflinePackInstaller).
+        // Mantieni la splash screen finché la mappa non è pronta o finché non scatta un timeout (2s)
         splashScreen.setKeepOnScreenCondition { !isMapReady }
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ isMapReady = true }, 8000L)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ isMapReady = true }, 2000L)
 
         // Personalizzazione dell'uscita della splash screen per un effetto "premium"
         splashScreen.setOnExitAnimationListener { splashScreenView ->
@@ -203,20 +192,6 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        // Schermata iniziale: Mappa (con GPS reale). La creazione va rimandata a dopo l'eventuale
-        // consenso alla privacy (prima apertura) e la copia del pacchetto offline precotto (se
-        // non già presente): MapLibre apre/crea il proprio database non appena la prima MapView
-        // viene istanziata, quindi la copia deve avvenire prima, non dopo.
-        showPrivacyConsentIfNeeded {
-            android.util.Log.d("OfflineDebug", "MainActivity.onCreate: avvio LocalAssetInstaller.installIfNeeded")
-            LocalAssetInstaller.installIfNeeded(applicationContext) {
-                LocalTileServer.startIfNeeded(applicationContext)
-                android.util.Log.d("OfflineDebug", "LocalAssetInstaller: onDone, server locale su porta ${LocalTileServer.port}, creo MapFragment")
-                showFragment(R.id.nav_map, "Mappa") { MapFragment() }
-                binding.navView.setCheckedItem(R.id.nav_map)
-            }
-        }
-
         // Gestione tasto back: prima chiude eventuali overlay aperti nella mappa (dettaglio
         // punto, salva punto, pianificazione percorso, luoghi salvati, ricerca), poi torna alla
         // Mappa se si è su un'altra voce di menu, e solo se già sulla Mappa "vuota" chiede
@@ -247,5 +222,18 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+
+        // Mostra il consenso privacy e poi carica la mappa. La creazione del MapFragment va
+        // rimandata a dopo la copia del pacchetto offline precotto (se non già presente):
+        // MapLibre apre/crea il proprio database non appena la prima MapView viene istanziata,
+        // quindi la copia deve avvenire prima, non dopo. Il server locale (LocalTileServer) va
+        // avviato subito dopo, prima che lo stile venga caricato.
+        showPrivacyConsentIfNeeded {
+            LocalAssetInstaller.installIfNeeded(applicationContext) {
+                LocalTileServer.startIfNeeded(applicationContext)
+                showFragment(R.id.nav_map, "Mappa") { MapFragment() }
+                binding.navView.setCheckedItem(R.id.nav_map)
+            }
+        }
     }
 }

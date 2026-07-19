@@ -47,4 +47,10 @@
     <string name="logo_desc">Logo LagunaNav</string>
     <string name="donate_thanks">Grazie per il tuo supporto! ⛵</string>
     <string name="open_menu">Apri Menu</string>
+    <string name="privacy_welcome">Benvenuto su LagunaNav</string>
+    <string name="privacy_intro">Prima di iniziare, vogliamo che tu sappia come gestiamo i tuoi dati.</string>
+    <string name="privacy_body">OpenLagunaMaps usa la tua posizione GPS solo sul telefono per mostrarti sulla mappa e calcolare le rotte: non viene mai inviata ai nostri server.\n\nQuando sei online, i servizi di ricerca e mappa passano da OpenStreetMap e OpenFreeMap.</string>
+    <string name="privacy_accept">Accetto e continua</string>
+    <string name="privacy_read_more">Leggi l\'informativa completa</string>
+    <string name="privacy_exit">Esci dall\'app</string>
 </resources>
