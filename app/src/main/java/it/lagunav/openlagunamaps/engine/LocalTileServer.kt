@@ -50,6 +50,10 @@ object LocalTileServer {
         if (server != null) return
         val freePort = ServerSocket(0).use { it.localPort }
         val instance = Server(context.applicationContext, freePort)
+        // Di default NanoHTTPD apre un Thread nuovo per ogni singola richiesta: con tanti pan
+        // veloci sulla mappa (decine di tile richieste in rapida successione) genera parecchi
+        // thread di breve vita inutilmente. Un pool fisso riusa gli stessi thread.
+        instance.setAsyncRunner(PooledAsyncRunner())
         try {
             instance.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             server = instance
@@ -95,6 +99,27 @@ object LocalTileServer {
         val dLat = Math.toRadians(lat - VENICE_LAT)
         val dLon = Math.toRadians(lon - VENICE_LON) * kotlin.math.cos(Math.toRadians((lat + VENICE_LAT) / 2))
         return kotlin.math.sqrt(dLat * dLat + dLon * dLon) * 6371.0
+    }
+
+    /** Sostituisce il DefaultAsyncRunner di NanoHTTPD (un Thread nuovo per richiesta) con un
+     *  pool fisso: stessa interfaccia, thread riusati invece di crearne e distruggerne uno per
+     *  ogni singola tile richiesta. */
+    private class PooledAsyncRunner(poolSize: Int = 4) : NanoHTTPD.AsyncRunner {
+        private val executor = java.util.concurrent.Executors.newFixedThreadPool(poolSize)
+        private val running = java.util.Collections.synchronizedList(mutableListOf<NanoHTTPD.ClientHandler>())
+
+        override fun closeAll() {
+            synchronized(running) { running.toList() }.forEach { it.close() }
+        }
+
+        override fun closed(clientHandler: NanoHTTPD.ClientHandler) {
+            running.remove(clientHandler)
+        }
+
+        override fun exec(clientHandler: NanoHTTPD.ClientHandler) {
+            running.add(clientHandler)
+            executor.execute(clientHandler)
+        }
     }
 
     private fun fetchRemoteTile(template: String, z: Int, x: Int, y: Int): ByteArray? {
