@@ -14,8 +14,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 121
-        versionName = "1.88-pool-thread-server-locale"
+        versionCode = 122
+        versionName = "1.89-privacy-policy-e-consenso"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

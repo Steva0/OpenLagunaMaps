@@ -30,6 +30,56 @@ class MainActivity : AppCompatActivity() {
     private var isMapReady = false
     private var lastBackPressMs = 0L
 
+    /** Mostra il popup di consenso alla privacy alla primissima apertura (una sola volta,
+     *  persistito in SharedPreferences). Se l'utente accetta, prosegue con [onContinue]; se
+     *  rifiuta, chiude l'app — non esiste una modalità "ridotta" senza i permessi di base che
+     *  l'app usa (posizione, mappa), quindi non avrebbe senso proseguire comunque. */
+    private fun showPrivacyConsentIfNeeded(onContinue: () -> Unit) {
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_PRIVACY_ACCEPTED, false)) {
+            onContinue()
+            return
+        }
+        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Prima di iniziare")
+            .setMessage(
+                "OpenLagunaMaps usa la tua posizione GPS solo sul telefono, per mostrarti sulla " +
+                    "mappa e calcolare le rotte: non viene mai inviata a nostri server (non ne " +
+                    "abbiamo). Quando sei online, la ricerca di canali/luoghi e lo scaricamento " +
+                    "di mappa al di fuori della laguna passano rispettivamente da " +
+                    "OpenStreetMap/Nominatim e OpenFreeMap.\n\n" +
+                    "Continuando accetti l'informativa sulla privacy."
+            )
+            .setCancelable(false)
+            .setPositiveButton("Accetto e continua", null)
+            .setNegativeButton("Esci", null)
+            .setNeutralButton("Leggi tutto", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+                prefs.edit().putBoolean(KEY_PRIVACY_ACCEPTED, true).apply()
+                dialog.dismiss()
+                onContinue()
+            }
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).setOnClickListener {
+                finish()
+            }
+            // Non deve chiudere il dialog: l'utente deve comunque scegliere accetta/esci dopo
+            // aver letto, altrimenti il pulsante "accetta" implicito di AlertDialog al tap
+            // fuori area lo bypasserebbe.
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
+            }
+        }
+        dialog.show()
+    }
+
+    companion object {
+        private const val KEY_PRIVACY_ACCEPTED = "privacy_policy_accepted"
+        const val PRIVACY_POLICY_URL = "https://steva0.github.io/OpenLagunaMaps/privacy-policy.html"
+    }
+
     /**
      * Segnala che la mappa (o l'inizializzazione principale) è completata,
      * permettendo alla splash screen di sparire.
@@ -153,16 +203,18 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        // Schermata iniziale: Mappa (con GPS reale). La creazione va rimandata a dopo la copia
-        // del pacchetto offline precotto (se non già presente): MapLibre apre/crea il proprio
-        // database non appena la prima MapView viene istanziata, quindi la copia deve avvenire
-        // prima, non dopo.
-        android.util.Log.d("OfflineDebug", "MainActivity.onCreate: avvio LocalAssetInstaller.installIfNeeded")
-        LocalAssetInstaller.installIfNeeded(applicationContext) {
-            LocalTileServer.startIfNeeded(applicationContext)
-            android.util.Log.d("OfflineDebug", "LocalAssetInstaller: onDone, server locale su porta ${LocalTileServer.port}, creo MapFragment")
-            showFragment(R.id.nav_map, "Mappa") { MapFragment() }
-            binding.navView.setCheckedItem(R.id.nav_map)
+        // Schermata iniziale: Mappa (con GPS reale). La creazione va rimandata a dopo l'eventuale
+        // consenso alla privacy (prima apertura) e la copia del pacchetto offline precotto (se
+        // non già presente): MapLibre apre/crea il proprio database non appena la prima MapView
+        // viene istanziata, quindi la copia deve avvenire prima, non dopo.
+        showPrivacyConsentIfNeeded {
+            android.util.Log.d("OfflineDebug", "MainActivity.onCreate: avvio LocalAssetInstaller.installIfNeeded")
+            LocalAssetInstaller.installIfNeeded(applicationContext) {
+                LocalTileServer.startIfNeeded(applicationContext)
+                android.util.Log.d("OfflineDebug", "LocalAssetInstaller: onDone, server locale su porta ${LocalTileServer.port}, creo MapFragment")
+                showFragment(R.id.nav_map, "Mappa") { MapFragment() }
+                binding.navView.setCheckedItem(R.id.nav_map)
+            }
         }
 
         // Gestione tasto back: prima chiude eventuali overlay aperti nella mappa (dettaglio

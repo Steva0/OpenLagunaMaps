@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import androidx.fragment.app.Fragment
+import it.lagunav.openlagunamaps.MainActivity
 import it.lagunav.openlagunamaps.R
 
 class AboutFragment : Fragment() {
@@ -24,6 +25,10 @@ class AboutFragment : Fragment() {
         
         root.findViewById<Button>(R.id.btn_cv)?.setOnClickListener {
             openUrl("https://europa.eu/europass/eportfolio/api/eprofile/shared-profile/michele-stevanin/5f317bb5-67f7-40f7-9dd7-1027464d0870?view=html")
+        }
+
+        root.findViewById<Button>(R.id.btn_privacy_policy)?.setOnClickListener {
+            openUrl(MainActivity.PRIVACY_POLICY_URL)
         }
 
         root.findViewById<View>(R.id.btn_menu)?.setOnClickListener {
