@@ -401,15 +401,6 @@ class MapFragment : Fragment() {
     // MAPPA
     // =================================================================
 
-    // Diagnostica: conferma che il server locale della mappa offline sia su e che lo style
-    // JSON puntato sia quello con le route locali sostituite correttamente.
-    private fun logOfflineDebugState(momento: String, styleJson: String? = null) {
-        Log.d("OfflineDebug", "[$momento] LocalTileServer.port=${com.briccola.app.engine.LocalTileServer.port}")
-        if (styleJson != null) {
-            Log.d("OfflineDebug", "[$momento] style contiene 127.0.0.1? ${styleJson.contains("127.0.0.1")}, contiene __PORT__ residuo? ${styleJson.contains("__PORT__")}")
-        }
-    }
-
     private fun setupMap(savedInstanceState: Bundle?) {
         binding.mapView.onCreate(savedInstanceState)
         binding.mapView.getMapAsync { map ->
@@ -437,7 +428,6 @@ class MapFragment : Fragment() {
             // bianco per sempre. MapLibre chiama questo listener con il motivo esatto del fallimento.
             binding.mapView.addOnDidFailLoadingMapListener { errorMessage ->
                 Log.e("OfflineDebug", "Caricamento mappa/stile fallito: $errorMessage")
-                logOfflineDebugState("dopo fallimento setStyle")
             }
 
             // Lo stile punta a source/sprite/glifi serviti dal server locale (LocalTileServer,
@@ -447,10 +437,8 @@ class MapFragment : Fragment() {
             val styleJson = requireContext().assets.open("style_liberty_offline.json")
                 .bufferedReader().use { it.readText() }
                 .replace("__PORT__", com.briccola.app.engine.LocalTileServer.port.toString())
-            logOfflineDebugState("prima di setStyle", styleJson)
 
             map.setStyle(Style.Builder().fromJson(styleJson)) { style ->
-                Log.d("OfflineDebug", "setStyle: callback di successo invocata, stile caricato")
                 mapStyle = style
                 setupAllLayers(style)
                 // Notifica alla MainActivity che la mappa è carica per togliere la splash screen
@@ -2102,27 +2090,19 @@ class MapFragment : Fragment() {
         // Banner GPS disattivato/permesso mancante: il tap fa la cosa giusta per il problema
         // in corso (vedi updateGpsEnabledBanner per quale messaggio/stato è mostrato).
         binding.cardGpsDisabled.setOnClickListener {
-            // DEBUG TEMPORANEO: capire se il problema è che il tocco non arriva quasi mai
-            // (questo log non comparirebbe quasi mai) o se arriva sempre ma la richiesta di
-            // permesso/impostazioni non parte in modo affidabile (il log comparirebbe sempre,
-            // ma il dialog/le impostazioni no).
-            Log.d("GpsBanner", "Banner toccato — hasPermission=${hasLocationPermission()}")
             if (!hasLocationPermission()) {
                 if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ||
                     !prefs.getBoolean(KEY_ASKED_LOCATION_PERMISSION, false)
                 ) {
-                    Log.d("GpsBanner", "-> lancio il dialog di sistema")
                     prefs.edit().putBoolean(KEY_ASKED_LOCATION_PERMISSION, true).apply()
                     locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 } else {
                     // "Non chiedere più" già selezionato in passato: il sistema non mostrerebbe
                     // più il dialog, l'unica via è le impostazioni dell'app.
-                    Log.d("GpsBanner", "-> apro le impostazioni dell'app (permesso negato definitivamente)")
                     startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                         Uri.parse("package:${requireContext().packageName}")))
                 }
             } else {
-                Log.d("GpsBanner", "-> apro le impostazioni di localizzazione di sistema")
                 startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
             }
         }

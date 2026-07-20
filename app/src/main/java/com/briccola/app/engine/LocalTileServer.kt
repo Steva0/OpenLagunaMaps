@@ -58,7 +58,6 @@ object LocalTileServer {
             instance.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             server = instance
             port = freePort
-            Log.d(TAG, "Avviato su 127.0.0.1:$freePort")
         } catch (e: Exception) {
             Log.e(TAG, "Impossibile avviare il server locale sulla porta $freePort", e)
         }
@@ -82,7 +81,7 @@ object LocalTileServer {
             remoteVectorTemplate = template
             template
         } catch (e: Exception) {
-            Log.d(TAG, "TileJSON remoto non disponibile (probabilmente offline): ${e.message}")
+            // Probabilmente offline: non un errore da segnalare, solo backoff prima del prossimo tentativo.
             nextRemoteAttemptAllowedAt = now + REMOTE_RETRY_BACKOFF_MS
             null
         }
@@ -212,7 +211,6 @@ object LocalTileServer {
                         totalBytes -= size
                     }
                 }
-                Log.d(TAG, "Cache tile evictata, dimensione ora ~${totalBytes / 1_000_000}MB")
             }
         }
 

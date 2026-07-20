@@ -48,14 +48,11 @@ object LocalAssetInstaller {
         val bundled = try {
             context.assets.open(VERSION_ASSET).bufferedReader().use { it.readText() }.trim()
         } catch (e: Exception) {
-            Log.d(TAG, "Nessun $VERSION_ASSET negli asset, salto il controllo versione")
             return false
         }
         val installed = File(context.filesDir, VERSION_ASSET).takeIf { it.exists() }
             ?.readText()?.trim()
-        val isNewer = bundled != installed
-        Log.d(TAG, "Versione dati: bundlata=$bundled installata=$installed -> ${if (isNewer) "aggiorno" else "invariata"}")
-        return isNewer
+        return bundled != installed
     }
 
     private fun updateInstalledVersionMarker(context: Context) {
@@ -63,23 +60,20 @@ object LocalAssetInstaller {
             val bundled = context.assets.open(VERSION_ASSET).bufferedReader().use { it.readText() }
             File(context.filesDir, VERSION_ASSET).writeText(bundled)
         } catch (e: Exception) {
-            Log.d(TAG, "Nessun $VERSION_ASSET da salvare")
+            // Nessun VERSION_ASSET negli asset: niente da salvare, non è un errore.
         }
     }
 
     private fun installOne(context: Context, assetName: String, checkQuery: String, forceReinstall: Boolean) {
         val dest = File(context.filesDir, assetName)
         if (!forceReinstall && dest.exists() && isValidSqlite(dest, checkQuery)) {
-            Log.d(TAG, "$assetName già presente e valido (${dest.length()} byte), copia saltata")
             return
         }
-        val startedAt = System.currentTimeMillis()
         try {
             val assetSize = context.assets.openFd(assetName).use { it.length }
             context.assets.open(assetName).use { input ->
                 dest.outputStream().use { output -> input.copyTo(output, bufferSize = 1 shl 20) }
             }
-            val elapsedMs = System.currentTimeMillis() - startedAt
             if (dest.length() != assetSize) {
                 Log.e(TAG, "$assetName: copia incompleta, attesi $assetSize byte, copiati ${dest.length()}")
                 dest.delete()
@@ -90,7 +84,6 @@ object LocalAssetInstaller {
                 dest.delete()
                 return
             }
-            Log.d(TAG, "$assetName copiato e verificato (${dest.length()} byte) in ${elapsedMs}ms")
         } catch (e: Exception) {
             Log.e(TAG, "Errore copiando $assetName", e)
             dest.delete()
