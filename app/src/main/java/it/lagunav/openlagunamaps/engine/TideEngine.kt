@@ -175,7 +175,7 @@ object TideEngine {
 
     private fun httpGet(url: String): String {
         val conn = URL(url).openConnection()
-        conn.setRequestProperty("User-Agent", "OpenLagunaMaps/1.0")
+        conn.setRequestProperty("User-Agent", "Briccola/1.0")
         conn.connectTimeout = 6000; conn.readTimeout = 6000
         return conn.getInputStream().bufferedReader().readText()
     }

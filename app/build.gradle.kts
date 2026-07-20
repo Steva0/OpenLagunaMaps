@@ -25,8 +25,8 @@ android {
         applicationId = "it.lagunav.openlagunamaps"
         minSdk = 24
         targetSdk = 36
-        versionCode = 126
-        versionName = "1.0.3-pattern-scogli-zoom-cap"
+        versionCode = 127
+        versionName = "1.0.4-rename-briccola"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

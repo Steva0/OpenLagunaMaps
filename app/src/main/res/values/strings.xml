@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">LagunaNav</string>
+    <string name="app_name">Briccola</string>
     <string name="navigation_drawer_open">Apri menu navigazione</string>
     <string name="navigation_drawer_close">Chiudi menu navigazione</string>
 
@@ -27,15 +27,15 @@
     <string name="equip_unlimited">Oltre 50 Miglia (Senza Limiti)</string>
 
     <string name="about_title">Crediti e Missione</string>
-    <string name="about_description">LagunaNav nasce da un\'idea semplice: la navigazione in laguna deve essere accessibile a tutti. \n\nStanco di vedere app costose che spesso vendono dati gratuiti (come quelli di OpenStreetMap), ho deciso di creare uno strumento completo — con navigazione, meteo e maree — e di renderlo totalmente gratuito. \n\nÈ un progetto dedicato a chi ama il mare e la nostra laguna, pensato specialmente per i giovani diportisti che cercano uno strumento professionale senza barriere economiche.</string>
+    <string name="about_description">Briccola nasce da un\'idea semplice: la navigazione in laguna deve essere accessibile a tutti. \n\nStanco di vedere app costose che spesso vendono dati gratuiti (come quelli di OpenStreetMap), ho deciso di creare uno strumento completo — con navigazione, meteo e maree — e di renderlo totalmente gratuito. \n\nÈ un progetto dedicato a chi ama il mare e la nostra laguna, pensato specialmente per i giovani diportisti che cercano uno strumento professionale senza barriere economiche.</string>
     <string name="credits_title">Riconoscimenti Tecnici</string>
     <string name="credits_osm">Dati cartografici © OpenStreetMap contributors</string>
     <string name="credits_openfreemap">Tile della mappa forniti da OpenFreeMap</string>
     <string name="credits_maplibre">Motore cartografico: MapLibre GL Native</string>
     <string name="license_details">PolyForm Noncommercial License 1.0.0\n\nThe software is provided under this license, which allows you to use, modify, and share the software, but you may not use it for commercial purposes.\n\n1. Grant of Rights\nSubject to the terms and conditions of this license, the contributor grants you a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to use, reproduce, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute the software.\n\n2. Commercial Use Restriction\nYou may not make the software available to others for a fee.\n\n3. No Warranty\nThe software is provided \"as is\", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages or other liability, whether in an action of contract, tort or otherwise, arising from, out of or in connection with the software or the use or other dealings in the software.</string>
-    <string name="donate_title">Supporta LagunaNav</string>
+    <string name="donate_title">Supporta Briccola</string>
     <string name="donate_subtitle">Aiutaci a mantenere la rotta</string>
-    <string name="donate_description">LagunaNav è un progetto indipendente e gratuito. \n\nLe donazioni aiutano a coprire i costi dei server per le mappe, le API del meteo e il tempo dedicato allo sviluppo di nuove funzionalità. \n\nOgni contributo, anche piccolo come un caffè, fa la differenza per garantire un servizio affidabile a tutta la comunità dei naviganti veneziani.</string>
+    <string name="donate_description">Briccola è un progetto indipendente e gratuito. \n\nLe donazioni aiutano a coprire i costi dei server per le mappe, le API del meteo e il tempo dedicato allo sviluppo di nuove funzionalità. \n\nOgni contributo, anche piccolo come un caffè, fa la differenza per garantire un servizio affidabile a tutta la comunità dei naviganti veneziani.</string>
     <string name="donate_coffee_text">Offri un caffè allo sviluppatore</string>
     <string name="btn_paypal">Dona ora con PayPal</string>
 
@@ -44,12 +44,12 @@
     <string name="btn_github">GitHub</string>
     <string name="btn_cv">Il mio CV</string>
     <string name="btn_privacy_policy">Informativa sulla privacy</string>
-    <string name="logo_desc">Logo LagunaNav</string>
+    <string name="logo_desc">Logo Briccola</string>
     <string name="donate_thanks">Grazie per il tuo supporto! ⛵</string>
     <string name="open_menu">Apri Menu</string>
-    <string name="privacy_welcome">Benvenuto su LagunaNav</string>
+    <string name="privacy_welcome">Benvenuto su Briccola</string>
     <string name="privacy_intro">Prima di iniziare, vogliamo che tu sappia come gestiamo i tuoi dati.</string>
-    <string name="privacy_body">OpenLagunaMaps usa la tua posizione GPS solo sul telefono per mostrarti sulla mappa e calcolare le rotte: non viene mai inviata ai nostri server.\n\nQuando sei online, i servizi di ricerca e mappa passano da OpenStreetMap e OpenFreeMap.</string>
+    <string name="privacy_body">Briccola usa la tua posizione GPS solo sul telefono per mostrarti sulla mappa e calcolare le rotte: non viene mai inviata ai nostri server.\n\nQuando sei online, i servizi di ricerca e mappa passano da OpenStreetMap e OpenFreeMap.</string>
     <string name="privacy_accept">Accetto e continua</string>
     <string name="privacy_read_more">Leggi l\'informativa completa</string>
     <string name="privacy_exit">Esci dall\'app</string>

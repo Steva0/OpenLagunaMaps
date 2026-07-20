@@ -2011,7 +2011,7 @@ class MapFragment : Fragment() {
             val enc  = java.net.URLEncoder.encode(query, "UTF-8")
             val url  = "https://nominatim.openstreetmap.org/search?format=json&q=$enc&bounded=1&viewbox=11.7,45.65,12.85,45.05&limit=5"
             val conn = URL(url).openConnection()
-            conn.setRequestProperty("User-Agent", "LagunaNav/1.0")
+            conn.setRequestProperty("User-Agent", "Briccola/1.0")
             conn.connectTimeout = 5000; conn.readTimeout = 5000
             val arr = JSONArray(conn.getInputStream().bufferedReader().readText())
             (0 until arr.length()).map { i ->
