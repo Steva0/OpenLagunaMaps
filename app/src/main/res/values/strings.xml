@@ -8,7 +8,7 @@
     <string name="menu_settings">Impostazioni</string>
     <string name="menu_devtools">Strumenti Dev</string>
     <string name="menu_about">Crediti e Licenza</string>
-    <string name="menu_donate">Dona al progetto</string>
+    <string name="menu_donate">Sostieni il progetto</string>
 
     <string name="settings_boat_profile">Profilo Barca</string>
     <string name="settings_draft_label">Pescaggio (metri)</string>
@@ -47,6 +47,8 @@
     <string name="logo_desc">Logo Briccola</string>
     <string name="donate_thanks">Grazie per il tuo supporto! ⛵</string>
     <string name="open_menu">Apri Menu</string>
+    <string name="close_menu">Chiudi</string>
+    <string name="app_subtitle">Navigatore della laguna</string>
     <string name="privacy_welcome">Benvenuto su Briccola</string>
     <string name="privacy_intro">Prima di iniziare, vogliamo che tu sappia come gestiamo i tuoi dati.</string>
     <string name="privacy_body">Briccola usa la tua posizione GPS solo sul telefono per mostrarti sulla mappa e calcolare le rotte: non viene mai inviata ai nostri server.\n\nQuando sei online, i servizi di ricerca e mappa passano da OpenStreetMap e OpenFreeMap.</string>
