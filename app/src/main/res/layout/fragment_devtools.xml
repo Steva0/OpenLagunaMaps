@@ -37,7 +37,7 @@
 
         <!-- Compatto quando il contenuto ci sta (es. poche voci), scorrevole solo oltre
              maxHeight (es. pannello Settaggi Dev con molti slider). -->
-        <it.lagunav.openlagunamaps.ui.MaxHeightScrollView
+        <com.briccola.app.ui.MaxHeightScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:maxHeight="420dp"
@@ -614,7 +614,7 @@
                 android:textColor="#FF00FF"
                 android:textSize="9sp" />
         </LinearLayout>
-        </it.lagunav.openlagunamaps.ui.MaxHeightScrollView>
+        </com.briccola.app.ui.MaxHeightScrollView>
     </androidx.cardview.widget.CardView>
 
     <!-- Joystick simulatore: SEMPRE visibile in Dev Tools (fondo centro) -->
@@ -628,7 +628,7 @@
         app:cardCornerRadius="100dp"
         app:cardElevation="4dp">
 
-        <it.lagunav.openlagunamaps.ui.JoystickView
+        <com.briccola.app.ui.JoystickView
             android:id="@+id/joystick"
             android:layout_width="160dp"
             android:layout_height="160dp" />

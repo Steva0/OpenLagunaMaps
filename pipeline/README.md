@@ -1,4 +1,4 @@
-# Pipeline dati mappa — OpenLagunaMaps
+# Pipeline dati mappa — Briccola
 
 Questi script generano i file dati bundlati nell'app (`app/src/main/assets/`) a partire da
 dati grezzi (estratti OSM, batimetria georeferenziata). Vanno eseguiti da una cartella di

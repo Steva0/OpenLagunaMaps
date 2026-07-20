@@ -256,7 +256,7 @@
                         android:textColor="#333333"
                         android:textSize="15sp" />
 
-                    <it.lagunav.openlagunamaps.ui.TideChartView
+                    <com.briccola.app.ui.TideChartView
                         android:id="@+id/tide_chart"
                         android:layout_width="match_parent"
                         android:layout_height="160dp"

@@ -14,7 +14,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "it.lagunav.openlagunamaps"
+    namespace = "com.briccola.app"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -22,7 +22,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "it.lagunav.openlagunamaps"
+        applicationId = "com.briccola.app"
         minSdk = 24
         targetSdk = 36
         versionCode = 127

@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OpenLagunaMaps"
+rootProject.name = "Briccola"
 include(":app")
  
